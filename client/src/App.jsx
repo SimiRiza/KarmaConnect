@@ -1,3 +1,12 @@
+import CSRLayout from './pages/csr/CSRLayout';
+import CSRDashboardPage from './pages/csr/CSRDashboardPage';
+import CSRProfilePage from './pages/csr/CSRProfilePage';
+import CSRDiscoverPage from './pages/csr/CSRDiscoverPage';
+import CSREvaluationPage from './pages/csr/CSREvaluationPage';
+import CSRPortfolioPage from './pages/csr/CSRPortfolioPage';
+import CSRMonitorPage from './pages/csr/CSRMonitorPage';
+import CSRReportsPage from './pages/csr/CSRReportsPage';
+import CSRBudgetPage from './pages/csr/CSRBudgetPage';
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import NGODashboardPage from './pages/NGODashboardPage';
@@ -23,7 +32,6 @@ import MyImpactPage from './pages/MyImpactPage';
 import SavedPage from './pages/SavedPage';
 import {
   CommunityDashboard,
-  CSRDashboard,
   AdminDashboard
 } from './pages/Dashboards';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -143,16 +151,20 @@ export const App = () => {
             }
           />
 
-          <Route
-            path="/csr/dashboard"
-            element={
-              <ProtectedRoute>
-                <RoleProtectedRoute allowedRoles={['csr_manager', 'admin']}>
-                  <CSRDashboard />
-                </RoleProtectedRoute>
-              </ProtectedRoute>
-            }
-          />
+          <Route element={<RoleProtectedRoute allowedRoles={['csr_manager']} />}>
+            <Route path="/csr" element={<CSRLayout />}>
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<CSRDashboardPage />} />
+              <Route path="profile" element={<CSRProfilePage />} />
+              <Route path="discover-projects" element={<CSRDiscoverPage />} />
+              <Route path="projects/:id" element={<CSREvaluationPage />} />
+              <Route path="projects/:id/monitor" element={<CSRMonitorPage />} />
+              <Route path="portfolio" element={<CSRPortfolioPage />} />
+              <Route path="reports" element={<CSRReportsPage />} />
+              <Route path="budget" element={<CSRBudgetPage />} />
+              <Route path="*" element={<Navigate to="/csr/dashboard" replace />} />
+            </Route>
+          </Route>
 
           <Route
             path="/admin/dashboard"

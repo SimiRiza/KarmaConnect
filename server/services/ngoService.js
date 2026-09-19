@@ -1,3 +1,4 @@
+import { recalculateProjectFunding } from './fundingService.js';
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import NGOProfile from '../models/NGOProfile.js';
@@ -285,7 +286,7 @@ export const updateProject = (ngoId, projectId, data) => strictTransaction(async
     });
     await recalculateNgoStats(ngoId, session);
   }
-  return project;
+  return recalculateProjectFunding(project._id, session);
 });
 export const updateProjectStatus = (ngoId, projectId, status) => updateProject(ngoId, projectId, {
   status
@@ -358,7 +359,7 @@ export const updateProjectResources = (ngoId, projectId, data) => strictTransact
   await project.save({
     session
   });
-  return project;
+  return recalculateProjectFunding(project._id, session);
 });
 export const uploadProjectPhotos = async (ngoId, projectId, category, urls) => {
   await owned(ngoId, projectId);

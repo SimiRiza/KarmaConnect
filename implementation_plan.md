@@ -1,97 +1,256 @@
-﻿# Implementation Plan - Prompt 3: NGO Dashboard
+﻿# Implementation Plan - Prompt 4: CSR Manager Dashboard
 
-Status: Approved by the user and implemented. See gemini.md for final decisions and validation results.
+Status: Approved by the user, implemented and verified. See gemini.md for final decisions.
 
-## Objective and boundaries
-Complete the NGO dashboard within the existing React/Vite/Tailwind and Express/Mongoose application. Preserve authentication, existing data, Community User features, and existing NGO work. No CSR dashboard, matching algorithm, chat, notifications, payment integration, or admin verification tools in this prompt.
+## Objective
+Extend KarmaConnect with the complete csr_manager experience for discovering,
+evaluating, funding and monitoring NGO-managed Projects. Preserve authentication,
+existing records, the Community User dashboard and the NGO dashboard. Funding is
+explicitly simulated; no payment gateway, real matching algorithm, chat,
+notifications or admin verification tools are included.
 
-Read before planning: gemini.md and brandguidelines.md in the project root.
+Read before planning: root gemini.md and brandguidelines.md. Implementation will
+reuse the existing React/Router/Tailwind stack, service/controller patterns,
+strictTransaction helper, status pipeline, verification badge and funding display.
 
-## Findings from the existing application
-- Project, Problem linking fields, NGO statistics/team fields, NGO services/controllers/routes, six NGO pages, and the requested reusable components already exist in partial form. Extend and repair these files rather than recreate them.
-- App.jsx still mounts the placeholder NGO dashboard and does not register the other NGO pages. Its NGO guard and the backend currently also permit admin.
-- Several existing API paths/methods differ from the requested contract.
-- Adoption uses a transaction helper that can fall back to nontransactional writes; that cannot guarantee atomic adoption.
-- The direct completion endpoint can bypass pipeline order. Direct creation accepts caller-provided status.
-- Resource updates read receiptNote but neither require nor store it. Photo routes lack multipart upload middleware.
-- Impact statistics currently invent 12 volunteer hours per team member; there is no actual hours source.
-- Discovery logic is duplicated, resource filtering is missing, and urgency sorting needs correction.
-- Existing auth and community API tests provide a regression starting point. At planning time, Prompt 3 was unchecked in gemini.md.
+## Current project findings
+- CSRProfile already contains all requested editable profile fields and a read-only
+  verification status. It needs the six aggregate statistics.
+- There is no Funding model, CSR API/service or complete CSR page set yet.
+  App.jsx currently mounts a placeholder CSR dashboard and also permits admin;
+  the new /csr routes will allow only csr_manager.
+- Project already contains ownership, reciprocal Problem links, material needs,
+  milestones, beneficiary estimates, team members, photos and funding totals.
+- NGO resource updates store fundingSpent as a cumulative total in each
+  resourceUpdates snapshot. Summing these snapshots would double-count spending.
+- NGO resource tracking already allows recorded spending before any funding is
+  received. Existing amounts and history must survive CSR reconciliation.
+- Project has no dedicated urgency, delays/issues, milestone completion timestamps
+  or individual photo upload timestamps. Adopted projects can inherit urgency from
+  their source Problem; direct projects cannot truthfully claim an urgency.
+- Existing signup budgetRange values are strings with USD labels; project funding
+  uses INR. Existing focus-area labels also differ from Project category enum values.
+- The current baseline has 34 backend tests and a reusable headless browser check
+  covering NGO and community workflows. No new charting dependency is needed.
 
-## 1. Data and business rules
-- Retain all existing model fields and add only missing fields/defaults/validation. Complete Project fields, NGOProfile photos and team editing, and persistent resource note/receipt references.
-- Keep Project.ngoId immutable and server-assigned. Direct creation forces sourceProblemId=null and initial status=adopted. Received funding and accepted team membership remain server-controlled.
-- Maintain Problem.adoptedByNgoId and Problem.linkedProjectId alongside Project.sourceProblemId. Enforce one project per non-null source problem with a partial unique index after checking existing records for conflicts; never silently discard records.
-- Preserve community Application records. Support problem-linked and project-linked applicants; adjust uniqueness with partial indexes if required so null problem IDs do not prevent applications to distinct projects. Require a valid target and preserve duplicate prevention.
-- Use one sequential status service for PUT updates, PATCH status, and completion. Allow only the same status or the next step: reported -> adopted -> team_forming -> funding_needed -> in_progress -> completed.
-- Completion requires in_progress, a persisted after-photo, and a positive beneficiary count. Repeated completion is idempotent. Synchronize linked Problem status and NGO statistics transactionally.
-- Recalculate impact in a dedicated aggregation service. Add a nonnegative, explicitly recorded Project.volunteerHours total (default 0) editable in project management, and sum completed-project totals. Do not estimate hours from team size; detailed time logs remain future work.
-- Prevent edits to completed impact inputs from leaving aggregate statistics stale: recompute in the same transaction when those inputs change.
+## 1. Funding and reporting decisions proposed for approval
 
-## 2. Transactions and permissions
-- Add strict transaction behavior for NGO operations without changing existing signup behavior. Adoption must fail clearly on unsupported standalone MongoDB, never fall back to partial writes.
-- Within adoption, conditionally claim a reported/unlinked problem, create its project, and save both references in one transaction. Return 409 for a conflicting adoption. Concurrent adopters must produce exactly one project.
-- Require authenticate + authorize('ngo') for all NGO endpoints and allowedRoles=['ngo'] for all NGO pages.
-- Check ownership before reading private project data, processing uploads, reviewing applications, or mutating resources. Return 403 for another NGO's project and 404 for missing records.
-- Profile writes use explicit allowed fields; verification status and aggregate stats cannot be self-assigned.
-- Proposed verification behavior: pending/rejected NGOs may view their dashboard, discover problems, and edit their profile; adopting and creating managed projects require a verified NGOProfile. Display a clear explanation and test all verification states. This interprets the request's opening scope of verified NGO accounts while keeping onboarding usable.
-- Accept/reject and team membership updates run atomically. Use deduplicated membership and define pending-only review with same-decision retries allowed, avoiding accepted-then-rejected membership inconsistencies.
+### Currency and budget display
+- Treat new simulated allocations as INR, matching existing Project funding fields.
+  Validate positive finite amounts with at most two decimals; calculate in integer
+  paise internally and persist the requested Number fields in rupees.
+- Preserve CSRProfile.budgetRange as a string. Offer explicit INR ranges in the new
+  CSR profile editor while retaining a current legacy value until the user edits it.
+- Do not silently convert a saved dollar range into INR. Recommendations use saved
+  numeric budget limits only when the range is explicitly interpretable as INR;
+  otherwise apply focus areas and explain that the budget filter is not set.
+- The dashboard shows the configured budget range, rather than inventing an exact
+  total company budget. The budget page shows allocated, spent and remaining
+  allocation balance. Exact annual company budget is not present in the schema.
 
-## 3. API contract and shared infrastructure
-Implement the exact requested API contract and update the client service to use it. Preserve existing aliases where useful to avoid breaking existing callers.
+### Single funding reconciliation service
+- Create recalculateProjectFunding(projectId, session), called by all Funding
+  mutations and by NGO resource/status/completion updates that affect funded projects.
+- Sum non-withdrawn Funding.amountAllocated into Project.fundingReceived.
+  Withdrawn records remain as history and contribute zero to fundingReceived,
+  fundedBy and current portfolio totals. fundedBy contains distinct active funders.
+- Preserve NGO spending as the source of truth: use the latest cumulative
+  resourceUpdates fundingSpent snapshot, or the existing Project.fundingSpent when
+  there is no history. Never sum cumulative snapshots or erase historical spending.
+- Attribute this recorded total to non-withdrawn allocations oldest first, with
+  allocationDate and _id as a deterministic order. Cap each allocation's
+  amountSpentSoFar at its amountAllocated. Example: allocations of INR 100 and
+  INR 200 with INR 150 spent produce spent shares of INR 100 and INR 50.
+- If spending exceeds current CSR allocations, retain Project.fundingSpent and show
+  the difference as unattributed project spending. It does not inflate any CSR's
+  amount spent. This preserves the NGO workflow and provides a clear reconciliation
+  boundary for volunteer contributions in Prompt 6. Later allocations may cover
+  previously unattributed spending under the same oldest-first rule.
+- Updating/correcting the NGO's cumulative spending total, with its required note,
+  recalculates attribution and every affected CSR profile in the same transaction.
+- Allocation statuses derive from project state and attributed spend: completed
+  when the project completes; otherwise in_progress when the project is in_progress
+  or the allocation has spending; otherwise allocated. Withdrawn is terminal.
+  A same-request retry of a successful withdrawal returns the withdrawn record.
+- Withdrawal requires allocated status and zero attributed spending. It cannot
+  race with spending or completion to remove funds already committed by those rules.
 
-| Method | Route |
-| --- | --- |
-| GET, PUT | /api/ngo/me/profile |
-| GET | /api/ngo/problems |
-| POST | /api/ngo/problems/:id/adopt |
-| GET, POST | /api/ngo/projects |
-| GET, PUT | /api/ngo/projects/:id |
-| PATCH | /api/ngo/projects/:id/status |
-| GET | /api/ngo/projects/:id/applicants |
-| PATCH | /api/ngo/applications/:id |
-| PATCH | /api/ngo/projects/:id/resources |
-| POST | /api/ngo/projects/:id/photos |
-| PATCH | /api/ngo/projects/:id/complete |
-| GET | /api/ngo/dashboard-summary |
+### Ownership, transactions and accurate aggregates
+- CSR users cannot create, edit, adopt or move the status of any Project/Problem.
+  Funding services are the only CSR path that updates derived Project funding fields.
+- Browsing/evaluation is available to csr_manager accounts as requested. Do not add
+  a new CSR verification gate to simulated funding; show verification read-only.
+- Fundings and portfolio/report data are scoped to the requesting CSR. Reports and
+  monitoring require a non-withdrawn allocation to that project; an own withdrawn
+  record remains visible in funding history. Return 403 for other users' fundings.
+- Use strict replica-set transactions for allocation, withdrawal and reconciliation.
+  Serialize on the Project before computing totals, and on affected CSRProfile
+  records in stable order, to avoid lost updates across concurrent operations.
+- Add a client-generated idempotency key to funding requests and a compound unique
+  index scoped to csrUserId. Network retries must not allocate twice; genuinely
+  separate allocations to the same project remain supported.
+- Reject new allocations to completed projects and amounts exceeding the current
+  funding gap. Recheck the gap inside the transaction so simultaneous funders cannot
+  overallocate. Do not change existing project status automatically when funding arrives.
+- CSR totals count distinct non-withdrawn funded projects/NGOs, not Funding rows.
+  Count beneficiaries only for completed projects (using the existing completion
+  beneficiary count). Show ongoing project beneficiaries as estimates separately.
+  Sum teamMembers.length once per funded project as requested; label this as
+  volunteer participation across projects, not globally unique volunteers.
 
-- Extract shared discovery filtering/pagination/sanitization from the community route. Support location, category, urgency, resources needed, and existing search/status behavior; NGO status is always reported and unlinked. Use literal escaped search, bounded pagination, and numeric urgency ordering before pagination. Preserve coordinate privacy.
-- Extract and reuse multer disk storage with existing image limits and a swappable cloud-storage comment. Accept multipart project photos by before/progress/after category, validate inputs, and clean up files on rejected uploads.
-- Require a nonblank note or receipt reference for resource updates and persist it with the update. Validate finite nonnegative values and known material IDs. General project edits must not bypass tracked received-quantity/spending updates.
-- Show required, collected, spent, remaining balance, and funding shortfall distinctly. Funding received stays a stored field for Prompt 6; do not simulate incoming money.
-- Use a project aggregation with facets/lookups where appropriate for dashboard counts and pending application previews; avoid repeated per-project queries and duplicate application counts. Nearby means the NGO's configured city/served locations; show an explicit all-locations fallback when neither is set.
-- Validate IDs, enums, numeric fields, array structures, dates, timeline order, and URL fields server-side. Keep controllers thin and response/error shapes consistent.
+## 2. Model and service extensions
+- Add server/models/Funding.js with csrUserId, projectId, amountAllocated,
+  amountSpentSoFar, allocationDate, status, notes and timestamps. Add the internal
+  idempotency key and indexes for ownership/status/project lookups.
+- Extend Project with fundedBy only; retain existing fields and data. Protect
+  fundedBy, fundingReceived and allocation-level spending from arbitrary client edits.
+- Extend CSRProfile with totalBudgetAllocated, totalAmountSpent, activeProjectsCount,
+  completedProjectsCount, totalBeneficiariesReached and totalNgosPartnered, defaulting
+  to zero. Profile PUT must not accept these totals or verificationStatus.
+- Add separate funding reconciliation, CSR statistics, CSR discovery and reporting
+  services. Controllers remain thin and reuse existing error/validation conventions.
+- Integrate funded-project reconciliation into NGO resource updates, status changes,
+  completion and edits to completed beneficiary counts. Keep the no-Funding NGO
+  behavior and all existing completion/ownership/receipt rules intact.
+- Preserve the existing community Contribution model and amounts. Do not count them
+  again as CSR funds. Clearly document Prompt 6's future unified reconciliation work.
+- Add indexes without deleting records or rebuilding unrelated indexes.
 
-## 4. Frontend completion
-Wire existing pages into App.jsx and NGO navigation, preserving other role routes and authentication behavior.
+## 3. API implementation
+Every route below uses authenticate + authorize('csr_manager'). Register static
+reports/portfolio before the parameterized report route.
 
-- /ngo/dashboard: five summary cards, top-level impact totals, nearby unadopted problems with adoption confirmation, active project pipelines, and inline pending application review.
-- /ngo/profile: about, cause/location chips, contact details, photos, editable team cards, and read-only verification badge/explanation.
-- /ngo/discover-problems: consistent ProblemCard/filter patterns, resources filter, pagination, loading/error/empty states, and adoption confirmation modal.
-- /ngo/projects/new: complete project form including beneficiaries, skills, volunteers, repeatable materials and milestones, location, and timeline. Support source-problem state prefill. Submit adoption through the transactional adopt endpoint, never create a separate direct project for that path. Quick adoption remains available with defaults.
-- /ngo/projects: owned-project cards, status filtering, pipeline, funding transparency, and volunteer/application counts.
-- /ngo/projects/:id: full details and reusable edit form; valid next-step status control; Applicants, Team, Resources, and Photos tabs; quantity/spending updates with required note; multipart galleries; completion disabled with a visible explanation until requirements are met.
-- Reuse and complete ProjectCard, StatusPipeline, FundingProgressBar, ApplicantCard, RepeatableFieldList, VerificationBadge, SkillsChipInput, and existing community patterns.
-- Match existing green/teal, coral actions, warm backgrounds, and status colors. Adopted uses teal consistently. Include accessible labels, keyboard-operable dialogs/tabs, readable text, responsive layouts, and clear save/failure feedback.
-- Team tab lists accepted volunteers; full team workspace remains Prompt 5.
+| Method | Route | Behavior |
+| --- | --- | --- |
+| GET, PUT | /api/csr/me/profile | Own profile; validated editable fields only |
+| GET | /api/csr/projects | Paginated NGO-managed Project discovery |
+| GET | /api/csr/projects/:id | Evaluation with curated NGO credibility and evidence |
+| POST | /api/csr/match-projects | Temporary filtered/sorted project matching |
+| POST | /api/csr/projects/:id/fund | Simulated allocation, idempotency and recalculation |
+| GET | /api/csr/fundings | Own records, with status filter and project summaries |
+| GET | /api/csr/fundings/:id | Own funding detail |
+| PATCH | /api/csr/fundings/:id/withdraw | Guarded withdrawal and recalculation |
+| GET | /api/csr/projects/:id/progress | Curated monitoring for own funded project |
+| GET | /api/csr/reports/portfolio | Aggregate own portfolio report |
+| GET | /api/csr/reports/:projectId | Structured report for own funded project |
+| GET | /api/csr/dashboard-summary | Accurate aggregate totals and dashboard sections |
 
-## 5. Verification and acceptance checks
-Use an isolated MongoDB replica set and seeded test accounts, never destructive operations on the user's application database.
+### Discovery and temporary matching
+- Browse Projects with a managing NGO, never raw Problems. Default to unfinished
+  projects with fundingRequired > fundingReceived. Include-fully-funded toggle
+  broadens discovery; completed projects may be evaluated but cannot receive funding.
+- Support category/cause, city/area, fundingRequired min/max, NGO verification,
+  beneficiaries min/max, urgency and duration filters, with bounded pagination.
+- Join the NGO profile for current verification and track record; avoid exposing
+  applicant/contact/private user data, raw coordinates or other CSR funding notes.
+- Derive urgency from sourceProblemId where available; display Not specified for
+  direct projects and exclude unspecified urgency when an urgency filter is applied.
+- Compute duration from startDate/expectedEndDate. Unknown duration is shown as
+  unspecified and excluded when a maximum duration is explicitly requested.
+- Normalize focus-area labels through an explicit category mapping, supporting both
+  enum values and existing signup labels. Reject unmappable inputs with useful
+  validation rather than silently pretending to find matches.
+- Match on overlapping category, location, fundingRequired budget interval and
+  timeline limit, with overlap count then funding gap/creation date as stable sort.
+  A project currently has one category, so overlap is usually 0 or 1; do not invent
+  a sophisticated score. Comment clearly that Prompt 5 replaces this filter-and-sort.
 
-- Run existing authentication/community tests and client production build as baseline and after implementation; report baseline failures separately.
-- Add focused NGO integration tests for every requested route, validation, read/write role restrictions, verification rules, and cross-NGO ownership using two NGO accounts.
-- Test adoption success, competing simultaneous adopters, and deterministic failure between project insertion and Problem update: assert rollback leaves neither an orphan nor a partial link. Where practical, test an interrupted request/connection; transaction rollback and concurrency checks are the primary repeatable proof.
-- Test direct creation, protected fields, invalid status jumps through all mutation routes, and completion criteria, linked status synchronization, stats and idempotency.
-- Test existing problem applications and project-linked applications, deduplicated team acceptance, and rejection behavior.
-- Test resource persistence including note/receipt, invalid numbers/material IDs, upload authorization, and each gallery category.
-- Seed known data and assert every dashboard count, nearby filter, and completed impact total matches the underlying records.
-- Explicitly retest community signup, login, post-problem, and apply flows; verify save/contribute/profile regressions with the existing suite.
-- Build the client and exercise available browser flows: role redirects/direct URLs, adopt-prefill, forms, resource progress, photos, completion, responsive layouts, and loading/error states. If browser tooling or DB startup is unavailable, state that limitation instead of claiming a pass.
+### Monitoring and reports
+- Report both project-wide required/received/spent/remaining totals and this CSR's
+  allocated/spent/remaining share with unambiguous labels and INR units.
+- Include current NGO verification/track record, timeline, materials (quantity data,
+  without invented item prices), milestones, before/progress/after evidence,
+  participation counts and a factual outcomes summary derived from project state.
+- Flag overdue unfinished milestones and overdue project end dates as derived
+  schedule warnings. Existing resource notes remain resource notes, not fabricated
+  incident records. Say that no separate issue log is recorded in the current model.
+- Recent activity is a view of available evidence and resource update timestamps:
+  list completed milestones/photo counts and project last-updated time without
+  claiming that each milestone/photo has an event timestamp.
+- Reports are structured JSON with generatedAt and simulation labeling. Render a
+  presentable UI now; downloadable PDF/export remains Prompt 8.
+- Use a shared aggregation pipeline for profile/portfolio/dashboard counts where
+  practical, deduplicating projects before computing beneficiaries and participation.
+
+## 4. Frontend pages and reusable components
+Replace only the CSR placeholder route; keep Community/NGO pages and guards intact.
+Add CSR navigation, role-aware discovery links and all routes beneath a guard with
+allowedRoles=['csr_manager'], including a protected /csr/* fallback.
+
+1. /csr/dashboard: configured budget range, allocated/spent/remaining totals,
+   projects, NGOs, participation and beneficiary cards; profile-based recommended
+   projects; own active funding summaries; honest recent project updates.
+2. /csr/profile: editable company/manager/industry/website, focus-area chips and
+   budget range; read-only verification explanation. Keep legacy budget values visible.
+3. /csr/discover-projects: CSRProjectCard grid, filter sidebar including urgency and
+   duration, fully-funded toggle, pagination, and a distinct Best Matches panel.
+4. /csr/projects/:id: evaluation details, NGOCredibilityCard, materials and funding
+   breakdown, timeline/evidence/skills/beneficiaries, and FundModal.
+5. /csr/portfolio: funding/project status views, status filter, allocation history,
+   guarded withdrawal and links to monitoring/reports. Group repeated allocations
+   clearly so users understand multiple records on the same project.
+6. /csr/projects/:id/monitor: milestone checklist, own/project funding summaries,
+   photo stages and visible derived schedule warnings.
+7. /csr/reports: PortfolioSummaryCard plus funded project list and clean ReportView
+   sections with genuine figures, evidence and explicit estimated/reached labels.
+8. /csr/budget: totals and a per-project INR table, distinguishing current allocation
+   balance from the company's unrecorded exact annual budget. No new chart library.
+
+Build CSRProjectCard, NGOCredibilityCard, FundModal, ReportView and
+PortfolioSummaryCard. Reuse StatusPipeline, FundingProgressBar, SkillsChipInput and
+VerificationBadge. Give VerificationBadge an optional entity label so the CSR
+profile says Verified company while existing NGO uses still say Verified NGO.
+
+FundModal explicitly says this is a simulated allocation and that payment processing
+will be added later. Keep an idempotency key through retries, disable duplicate
+submissions, validate the amount, and refresh funding gap and portfolio data after
+success. Support keyboard navigation, accessible dialogs/labels, responsive tables,
+and loading/error/empty/success states. Use the existing brand palette with a
+professional, data-forward layout and no invented impact or budget values.
+
+## 5. Validation and acceptance coverage
+Before implementation, run the existing 34 tests and frontend build as a baseline.
+All write tests and browser fixtures use isolated in-memory replica sets, never the
+user's application data.
+
+- Verify authentication/role restrictions on every new endpoint and all CSR direct
+  URLs; explicitly prove CSR cannot call NGO create/adopt/edit or community posting.
+- Test editable profile fields, blocked self-verification/stat edits and legacy
+  budget preservation; reject invalid amounts, filters, URLs and IDs.
+- Seed at least three categories, multiple NGO verification states, cities, funding
+  gaps, beneficiary counts and timelines; assert browse/match results exactly.
+- Fund one project from two CSR accounts and assert aggregate fundingReceived,
+  unique fundedBy, per-user ownership and no duplicate counts for repeat allocations.
+- Test duplicate-request idempotency, competing allocations near the gap, rollback
+  after an injected failure and rejection on unsupported standalone transactions.
+- Log NGO spending and assert the exact oldest-first attribution, retained receipt
+  history, CSR totals and project spending. Test spending corrections, legacy
+  spending with no funding, and a later allocation covering that spending.
+- Verify eligible withdrawal, rejection after spending/in_progress/completion,
+  ownership, retries and withdrawal races with NGO resource updates.
+- Complete funded projects through the existing NGO API and verify Funding statuses,
+  NGO/CSR stats and report numbers immediately, including concurrent completions.
+- Compare per-project and portfolio reports directly with seeded database state,
+  covering multiple allocations/projects/NGOs, withdrawn rows, beneficiary edits,
+  empty portfolios and volunteer counts.
+- Run all existing auth/community/NGO tests and browser workflows, explicitly
+  retaining NGO create/adopt and community signup/login/post/apply.
+- Add CSR headless-browser coverage for profile, browse, matching, evaluation,
+  simulated funding, portfolio/withdrawal, monitoring, reports, budget and direct
+  role-guard checks. Inspect desktop/mobile screenshots and uncaught errors.
+- Run the production frontend build and document any actual limitations. Reuse
+  the existing browser tooling and dependencies.
 
 ## 6. Documentation and delivery
-- After implementation and verification, update gemini.md build status and known decisions with reciprocal Problem/Project links, strict transaction requirements, pipeline/completion rules, verification behavior, application/team relationships, the volunteer-hours source, receipt tracking, and Prompt 5/6 extension boundaries.
-- Add any necessary local replica-set setup notes to README/.env.example without changing credentials.
-- Deliver a concise summary of changes, tests/results, and any remaining limitations. Mark Prompt 3 complete only when its scope is implemented and validated.
+After implementation and verification, update gemini.md's build checklist and known
+decisions with Funding, the shared reconciliation service, spending attribution,
+withdrawal/concurrency rules, simulation status, currency/legacy budget behavior,
+portfolio counting and Prompt 5/6 extension points. Update README setup/test notes.
+Mark Prompt 4 complete only once its scope and regression checks are finished.
 
-## Approval gate
-The attached user request explicitly requires: "Generate implementation_plan.md and wait for approval before executing". Approval was received before changing application code. In particular, approval includes the proposed verification behavior and recorded volunteer-hours field described above.
+## Execution status
+User approval was received before implementation. All eight CSR pages and requested
+API routes are implemented. All 49 backend tests and the production frontend build
+passed. CSR and existing NGO/community browser suites passed; screenshots are in
+artifacts/csr-browser/ and artifacts/ngo-browser/. gemini.md marks Prompt 4 complete
+and records reconciliation rules and future-prompt extension points.

@@ -193,7 +193,7 @@ source-project links instead of deleting or silently merging records.
 ### Verification commands
 
 From `server`, run `npm.cmd test` on Windows (or `npm test` elsewhere). The suite
-includes 34 checks across authentication, community features and NGO workflows.
+includes 49 checks across authentication, community, NGO and CSR workflows.
 From `client`, run `npm.cmd run build` for the production frontend build.
 
 From `server`, `node scripts/verifyNgoBrowser.mjs` exercises the complete NGO flow
@@ -204,3 +204,38 @@ cleans up its uploaded test files. The first run may need the MongoDB binary dow
 
 See `gemini.md` for reciprocal Problem/Project links, status rules, recorded
 volunteer hours, resource receipt history, and the Prompt 5/6 extension boundaries.
+
+
+## Prompt 4: CSR Manager dashboard
+
+CSR accounts now use /csr/dashboard, /csr/profile, /csr/discover-projects,
+/csr/projects/:id, /csr/portfolio, /csr/projects/:id/monitor, /csr/reports and
+/csr/budget. Only csr_manager accounts can access these pages and the /api/csr API.
+CSR managers fund and monitor NGO projects; they cannot edit or adopt them.
+
+All funding is explicitly simulated in INR. No payment gateway is connected.
+The funding POST requires an Idempotency-Key header (8-100 letters, digits,
+underscores or hyphens); the browser supplies and retains it through retries.
+Repeated keys cannot allocate twice. New amounts must be positive with at most two
+decimal places and cannot exceed the current gap. Completed projects reject funding.
+
+Multiple funders share a project. The latest NGO cumulative spending total is
+attributed oldest allocation first, without exceeding an allocation. Unattributed
+historical spending remains visible; cumulative receipt snapshots are never summed.
+Only unspent allocations still in allocated status can be withdrawn. Transactions
+update Funding, Project and CSRProfile totals together; replica-set MongoDB is
+required, as for the NGO workflows. No existing application data is replaced.
+
+Legacy dollar budget ranges remain stored unchanged and are not converted to INR.
+The new CSR profile editor offers INR ranges for budget-based recommendations.
+Company budget is displayed as the configured range; allocation remaining balance
+is not presented as an exact annual company budget.
+
+From server, run node scripts/verifyCsrBrowser.mjs for the CSR browser checks.
+It uses the existing Windows Chrome setup with temporary users, a temporary browser
+profile and an isolated replica set, and saves screenshots to artifacts/csr-browser/.
+The existing verifyNgoBrowser.mjs still covers NGO and community regressions.
+
+Funding statuses, spending attribution, report access, temporary category matching,
+and the Prompt 6 contribution reconciliation boundary are documented in gemini.md.
+Downloadable PDF reports and real payments remain deferred as requested.

@@ -10,6 +10,8 @@ import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import problemRoutes from './routes/problemRoutes.js';
 import { prepareNgoIndexes } from './utils/ngoIndexes.js';
+import csrRoutes from './routes/csrRoutes.js';
+import Funding from './models/Funding.js';
 import ngoRoutes from './routes/ngoRoutes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
@@ -47,7 +49,7 @@ app.use(
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Idempotency-Key']
   })
 );
 
@@ -78,6 +80,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/problems', problemRoutes);
 app.use('/api/ngo', ngoRoutes);
+app.use('/api/csr', csrRoutes);
 
 // 7. 404 Handler for undefined API routes
 app.use('/api/*', (req, res) => {
@@ -94,6 +97,7 @@ app.use(errorHandler);
 if (process.env.NODE_ENV !== 'test' && !process.env.NODE_TEST_CONTEXT) {
   connectDB().then(async () => {
     await prepareNgoIndexes();
+    await Funding.createIndexes();
     app.listen(PORT, () => {
       console.log(`🚀 KarmaConnect Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
       console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);

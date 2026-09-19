@@ -58,7 +58,7 @@ export const Navbar = () => {
             <Link to="/#how-it-works" className="text-sm font-medium text-stone-600 hover:text-stone-900 transition-colors">
               How It Works
             </Link>
-            <Link to={user?.role === "ngo" ? "/ngo/discover-problems" : "/discover"} className="text-sm font-medium text-stone-600 hover:text-stone-900 transition-colors">
+            <Link to={user?.role === "ngo" ? "/ngo/discover-problems" : user?.role === "csr_manager" ? "/csr/discover-projects" : "/discover"} className="text-sm font-medium text-stone-600 hover:text-stone-900 transition-colors">
               Explore Projects
             </Link>
           </div>
@@ -130,7 +130,7 @@ export const Navbar = () => {
             How It Works
           </Link>
           <Link
-            to={user?.role === "ngo" ? "/ngo/discover-problems" : "/discover"}
+            to={user?.role === "ngo" ? "/ngo/discover-problems" : user?.role === "csr_manager" ? "/csr/discover-projects" : "/discover"}
             onClick={() => setMobileMenuOpen(false)}
             className="block py-2 text-stone-700 font-medium"
           >

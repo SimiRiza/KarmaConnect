@@ -48,7 +48,7 @@ exactly where the build stands.)
 - [x] Prompt 1 — Foundation + Authentication
 - [x] Prompt 2 — Community User/Volunteer Dashboard
 - [x] Prompt 3 — NGO Dashboard
-- [ ] Prompt 4 — CSR Manager Dashboard
+- [x] Prompt 4 — CSR Manager Dashboard
 - [ ] Prompt 5 — Matching + Team Formation
 - [ ] Prompt 6 — Contributions + Impact Tracking
 - [ ] Prompt 7 — Verification + Trust + Notifications
@@ -97,8 +97,8 @@ exactly where the build stands.)
 - Resource updates persist receiptNote as Project.resourceUpdates[].note with
   timestamp, spending total and material snapshots. General edits cannot change
   received quantities. Funding displays required, collected, spent, remaining
-  balance and shortfall. fundingReceived remains server-controlled; Prompt 6 adds
-  actual contribution/payment wiring, with no fake collected funds now.
+  balance and shortfall. fundingReceived remains server-controlled; Prompt 4 adds
+  explicitly simulated CSR allocations and Prompt 6 adds real contribution/payment wiring.
 - NGOProfile supports photos and simple team member cards; verification and impact
   totals are read-only to NGO clients. Photos use shared multer local storage with
   a future cloud-storage replacement point. Vite proxies /uploads as well as /api.
@@ -118,3 +118,83 @@ exactly where the build stands.)
   actual multipart uploads, completion, mobile layout, all NGO role guards, and
   community signup/login/post/apply. Rollback was tested with an injected failure
   between writes, plus competing adoption and simultaneous completion requests.
+
+
+### Prompt 4 decisions and verification
+- The complete CSR experience is under /csr/* and /api/csr, authorized strictly
+  for csr_manager. CSR users evaluate NGO-managed Projects; they cannot create,
+  edit, adopt, manage resources or change Project status. NGO/community role guards
+  remain intact. CSR verification is read-only; simulated allocation has no added
+  CSR verification gate. All editable CSR profile writes are allowlisted.
+- Funding is a new model: csrUserId, projectId, amountAllocated, amountSpentSoFar,
+  allocationDate, status, notes, timestamps, and an internal idempotencyKey.
+  Amounts are simulated INR, validated to two decimals and calculated in integer
+  paise before persisting the requested Number fields. No payment is collected.
+  Real payment integration is required before treating these as actual funds.
+- POST /api/csr/projects/:id/fund requires an Idempotency-Key header (8-100 letters,
+  digits, underscores or hyphens; body idempotencyKey is also accepted). Keys are
+  unique per CSR account. Identical retries return the existing allocation; reusing
+  a key with a changed project/amount/notes returns 409. Multiple intentional
+  allocations per company/project are supported with separate keys.
+- recalculateProjectFunding(projectId, session) is the single reconciliation path
+  for allocation, withdrawal and funded NGO resource/status/completion updates.
+  It sums non-withdrawn allocation amounts into Project.fundingReceived and derives
+  unique Project.fundedBy. Funding, Project and all affected CSRProfile stats are
+  updated in a strict transaction; Project writes and ordered CSRProfile writes
+  serialize concurrent allocations, spending, withdrawals and completions.
+- NGO resourceUpdates contains cumulative spending snapshots, not incremental
+  expenses. Reconciliation uses the latest snapshot, or the existing fundingSpent
+  when no history exists. It never adds cumulative snapshots together. Spending
+  is attributed oldest allocation first (allocationDate then _id), capped at each
+  allocation's amount. Historical spending exceeding allocations is preserved and
+  displayed as unattributed project spending; later allocations can cover it.
+  The CSR amountSpentSoFar sum plus unattributed spending equals project spending.
+- Spending corrections retain the existing required receipt note/history and
+  recalculate allocations and company totals. Withdrawn allocations are retained
+  as history and excluded from current totals/fundedBy. Withdrawal is allowed only
+  when status=allocated and amountSpentSoFar=0; repeated withdrawal is idempotent.
+- Funding status is completed when its Project completes, in_progress while the
+  Project is in_progress or the allocation has spending, otherwise allocated.
+  Withdrawn is terminal. New funding is rejected for completed projects or amounts
+  exceeding the current gap; the gap is checked inside the transaction. Receiving
+  funding does not automatically advance the NGO's project status pipeline.
+- recalculateCsrStats and portfolioSummary deduplicate projects across allocation
+  records. Profiles track allocated/spent, active/completed counts, completed
+  project beneficiaries and distinct NGOs. Volunteer participation is team size
+  summed once per funded project, not distinct people across the whole portfolio.
+  Edits to completed beneficiary counts refresh every affected CSR profile.
+- CSR reports/monitoring require a non-withdrawn allocation owned by the caller.
+  Own withdrawn Funding history remains viewable. Evaluation projects are browsable
+  by CSR accounts; other funders' private notes and volunteer identities are omitted.
+  Reports distinguish the caller's allocated/spent/remaining share from project-wide
+  required/received/spent/remaining/unattributed figures and estimated vs reached
+  beneficiaries. Reports are JSON plus presentable UI; PDF/export remains Prompt 8.
+- Project discovery defaults to unfinished projects with a funding gap. The
+  includeFullyFunded toggle broadens this. Filters cover category/cause, city/area,
+  required-funding range, NGO verification, beneficiary range, source-Problem urgency
+  and timeline duration. Direct projects have unspecified urgency; absent timeline
+  duration is excluded only when a duration filter is requested.
+- Matching is deliberately a temporary category filter-and-sort. Existing signup
+  focus labels map explicitly to Project categories; category overlap is 0 or 1
+  because Project has one category. Prompt 5 replaces this with real matching.
+- CSRProfile.budgetRange remains a string. The new profile editor offers explicit
+  INR ranges and preserves existing legacy dollar values. Legacy dollar ranges are
+  never silently converted into INR. Recommendations apply a budget filter only
+  for a parseable INR range; the UI explains when that filter is not set. No exact
+  annual company budget is invented: budget pages show allocation balances.
+- Project has no separate issue log or per-photo/milestone event timestamps.
+  Monitoring derives overdue date warnings and shows existing resource notes.
+  Recent activity is explicitly current evidence with Project.updatedAt, not a
+  fabricated event feed. No new notification, chat or matching model was added.
+- Prompt 6 must reconcile volunteer Contribution money with these simulated Funding
+  records explicitly. Contribution amounts remain separate today and are not counted
+  twice. Do not blindly sum resource snapshots, attribute a full project cost to
+  every funder, or treat simulated allocations as settled real payments.
+- Verification: all 49 backend tests passed (34 prior checks plus 15 CSR checks),
+  including multi-funder accounting, idempotency, concurrency/rollback, spending
+  corrections, withdrawal races, funded completion and report/portfolio accuracy.
+  Production frontend build passed. CSR headless browser checks passed for profile,
+  matching, evaluation, allocation/withdrawal, monitoring/reports/budget, mobile
+  layout and all CSR route guards. The existing NGO/community browser suite also
+  passed, explicitly retesting NGO create/adopt and community signup/login/post/apply.
+  Desktop/mobile screenshots are in artifacts/csr-browser/.

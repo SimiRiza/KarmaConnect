@@ -38,6 +38,12 @@ const csrProfileSchema = new mongoose.Schema(
       default: '',
       trim: true
     },
+    totalBudgetAllocated: { type: Number, default: 0, min: 0 },
+    totalAmountSpent: { type: Number, default: 0, min: 0 },
+    activeProjectsCount: { type: Number, default: 0, min: 0 },
+    completedProjectsCount: { type: Number, default: 0, min: 0 },
+    totalBeneficiariesReached: { type: Number, default: 0, min: 0 },
+    totalNgosPartnered: { type: Number, default: 0, min: 0 },
     verificationStatus: {
       type: String,
       enum: ['pending', 'verified', 'rejected'],

@@ -8,7 +8,7 @@ import { PROBLEM_CATEGORIES, PROBLEM_STATUSES } from './Problem.js';
  * from an adopted community-posted Problem.
  *
  * NOTE on future expansions:
- *   - Prompt 4 (CSR Dashboard): CSR browsing, sponsorship proposals, corporate grants
+ *   - Prompt 4 (CSR Dashboard): CSR browsing and simulated allocations reconciled through Funding
  *   - Prompt 5 (Matching + Team Formation): full team workspace, chat, volunteer tasks built on `teamMembers`
  *   - Prompt 6 (Contributions + Impact): real contributions wiring into `fundingReceived`, receipts, transparency
  */
@@ -55,6 +55,7 @@ const milestoneSchema = new mongoose.Schema(
 
 const projectSchema = new mongoose.Schema(
   {
+    fundedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     ngoId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -140,7 +141,7 @@ const projectSchema = new mongoose.Schema(
     },
     volunteerHours: { type: Number, default: 0, min: 0 },
     resourceUpdates: [{ note: { type: String, required: true }, fundingSpent: Number, materials: [{ materialId: String, quantityReceived: Number }], createdAt: { type: Date, default: Date.now } }],
-    // Prompt 5 extends teamMembers; Prompt 6 wires real contributions into fundingReceived.
+    // Prompt 4 reconciles simulated CSR Funding; Prompt 6 adds real payments and volunteer contributions.
     fundingRequired: {
       type: Number,
       default: 0,

@@ -23,7 +23,7 @@ const CONFIGS = {
  * VerificationBadge — displays NGO verification status.
  * Props: status: 'verified' | 'pending' | 'rejected'
  */
-const VerificationBadge = ({ status = 'pending', className = '' }) => {
+const VerificationBadge = ({ status = 'pending', className = '', entity = 'NGO' }) => {
   const cfg = CONFIGS[status] || CONFIGS.pending;
   const Icon = cfg.icon;
 
@@ -32,7 +32,7 @@ const VerificationBadge = ({ status = 'pending', className = '' }) => {
       className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${cfg.className} ${className}`}
     >
       <Icon className="w-3.5 h-3.5" />
-      {cfg.label}
+      {status === 'verified' ? `Verified ${entity}` : cfg.label}
     </span>
   );
 };
