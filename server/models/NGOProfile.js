@@ -32,6 +32,7 @@ const ngoProfileSchema = new mongoose.Schema(
       type: [String],
       default: []
     },
+    photos: { type: [String], default: [] },
     about: {
       type: String,
       default: '',

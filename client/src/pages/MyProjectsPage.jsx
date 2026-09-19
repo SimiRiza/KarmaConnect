@@ -6,6 +6,7 @@ import { Plus, Loader2, AlertCircle, Filter } from 'lucide-react';
 
 const STATUS_FILTERS = [
   { value: '', label: 'All Projects' },
+  { value: 'reported', label: 'Reported' },
   { value: 'adopted', label: 'Adopted' },
   { value: 'team_forming', label: 'Team Forming' },
   { value: 'funding_needed', label: 'Funding Needed' },

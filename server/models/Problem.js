@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
  * Problem model — expanded in Prompt 2 from placeholder.
  *
  * NOTE on future expansions:
- *   - Prompt 3 (NGO Dashboard): adds `adoptedByNGO` ref + adoption workflow
+ *   - Prompt 3: adoptedByNgoId + linkedProjectId reciprocally link an adopted Project
  *   - Prompt 5 (Matching + Teams): adds `teamId` ref, matching metadata
  *   - Prompt 6 (Contributions + Impact): adds structured `fundingGoal`,
  *     `fundingCollected`, `fundingSpent` transparency fields

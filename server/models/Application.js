@@ -55,7 +55,7 @@ const applicationSchema = new mongoose.Schema(
       maxlength: [500, 'Note cannot exceed 500 characters'],
       default: ''
     },
-    // PROMPT 3 PLACEHOLDER: status transitions (accept/reject) added in NGO dashboard
+    // Prompt 3: pending applications are reviewed atomically with Project.teamMembers.
     status: {
       type: String,
       enum: {
@@ -71,7 +71,11 @@ const applicationSchema = new mongoose.Schema(
 );
 
 // Prevent a user from applying to the same problem twice
-applicationSchema.index({ userId: 1, problemId: 1 }, { unique: true });
+applicationSchema.index({ userId: 1, problemId: 1 }, { name: 'unique_problem_application', unique: true, partialFilterExpression: { problemId: { $type: 'objectId' } } });
+applicationSchema.index({ userId: 1, projectId: 1 }, { name: 'unique_project_application', unique: true, partialFilterExpression: { projectId: { $type: 'objectId' } } });
+applicationSchema.pre('validate', function () {
+  if ((!this.problemId && !this.projectId) || (this.problemId && this.projectId)) this.invalidate('problemId', 'Reference exactly one problem or project.');
+});
 
 const Application = mongoose.model('Application', applicationSchema);
 export default Application;

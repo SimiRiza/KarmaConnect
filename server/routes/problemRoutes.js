@@ -1,7 +1,6 @@
-import fs from 'fs';
-import path from 'path';
 import { Router } from 'express';
-import multer from 'multer';
+import { upload } from '../middleware/upload.js';
+import { discoverProblems } from '../services/problemDiscovery.js';
 import Problem from '../models/Problem.js';
 import Application from '../models/Application.js';
 import Contribution from '../models/Contribution.js';
@@ -9,27 +8,6 @@ import User from '../models/User.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 
 const router = Router();
-const uploadDir = path.resolve(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadDir),
-  filename: (_req, file, cb) => {
-    const safeName = `${Date.now()}-${file.originalname.replace(/\s+/g, '-')}`;
-    cb(null, safeName);
-  }
-});
-
-const upload = multer({
-  storage,
-  limits: { files: 6, fileSize: 5 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
-    if (allowed.includes(file.mimetype)) return cb(null, true);
-    cb(new Error('Only JPEG, PNG, and WEBP images are allowed.'));
-  }
-});
-
 const sanitizeLocation = (location) => {
   if (!location) return { city: '', area: '' };
   const { coordinates, ...safeLocation } = location;
@@ -69,7 +47,7 @@ const validateProblemPayload = (payload) => {
   if (!Array.isArray(payload.photos) || payload.photos.length === 0) {
     errors.push({ field: 'photos', message: 'At least one photo URL is required.' });
   }
-  if (Array.isArray(payload.photos) && payload.photos.some((photo) => typeof photo !== 'string' || !/^https?:\/\//i.test(photo))) {
+  if (Array.isArray(payload.photos) && payload.photos.some((photo) => typeof photo !== 'string' || (!/^https?:\/\//i.test(photo) && !/^\/uploads\/[\w.-]+$/.test(photo)))) {
     errors.push({ field: 'photos', message: 'Each photo must be a valid URL.' });
   }
   if (payload.location && Array.isArray(payload.location.coordinates) && payload.location.coordinates.length === 2) {
@@ -92,49 +70,7 @@ router.post('/upload', authenticate, authorize('community_user'), upload.array('
 
 router.get('/', authenticate, authorize('community_user'), async (req, res, next) => {
   try {
-    const { location, category, urgency, status, page = 1, limit = 10, sort = 'newest' } = req.query;
-    const filter = {};
-
-    if (location) filter['location.city'] = { $regex: String(location), $options: 'i' };
-    if (category) filter.category = category;
-    if (urgency) filter.urgency = urgency;
-    if (status) filter.status = status;
-
-    const parsedPage = Math.max(1, Number(page));
-    const parsedLimit = Math.min(50, Math.max(1, Number(limit)));
-    const skip = (parsedPage - 1) * parsedLimit;
-
-    const urgencyWeight = { low: 1, medium: 2, high: 3 };
-    const sortQuery = sort === 'most_urgent'
-      ? { createdAt: -1 }
-      : { createdAt: -1 };
-
-    const problems = await Problem.find(filter)
-      .sort(sortQuery)
-      .skip(skip)
-      .limit(parsedLimit)
-      .populate('postedBy', 'name profilePhotoUrl')
-      .lean();
-
-    const total = await Problem.countDocuments(filter);
-
-    const items = problems.map((problem) => {
-      const copy = { ...problem };
-      if (copy.location) {
-        const { coordinates, ...safeLocation } = copy.location;
-        copy.location = safeLocation;
-      }
-      return copy;
-    });
-
-    return res.status(200).json({
-      success: true,
-      page: parsedPage,
-      limit: parsedLimit,
-      total,
-      totalPages: Math.ceil(total / parsedLimit),
-      items
-    });
+    return res.status(200).json({ success: true, ...await discoverProblems(req.query) });
   } catch (error) {
     next(error);
   }

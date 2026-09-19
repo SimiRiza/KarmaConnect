@@ -1,331 +1,101 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
-import * as ngoSvc from '../services/ngoService';
-import StatusPipeline from '../components/StatusPipeline';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import * as ngo from '../services/ngoService';
+import StatusPipeline, { STATUSES } from '../components/StatusPipeline';
 import FundingProgressBar from '../components/FundingProgressBar';
 import ApplicantCard from '../components/ApplicantCard';
-import {
-  ArrowLeft, Loader2, AlertCircle, Users, MapPin, Calendar,
-  CheckCircle, ChevronDown, Image, Edit2, Flag
-} from 'lucide-react';
-
-const STATUS_NEXT = {
-  adopted: 'team_forming',
-  team_forming: 'funding_needed',
-  funding_needed: 'in_progress',
-  in_progress: null, // use Complete Project button
-  completed: null,
-};
-
-const STATUS_NEXT_LABEL = {
-  adopted: 'Move to Team Forming',
-  team_forming: 'Move to Funding Needed',
-  funding_needed: 'Move to In Progress',
-};
-
-const Section = ({ title, children }) => (
-  <div className="bg-white rounded-2xl p-5 border border-stone-200 shadow-sm space-y-4">
-    <h2 className="font-bold text-stone-800 text-sm border-b border-stone-100 pb-2">{title}</h2>
-    {children}
-  </div>
-);
-
-const ProjectDetailPage = () => {
-  const { id } = useParams();
-  const navigate = useNavigate();
-  const [project, setProject] = useState(null);
-  const [applicants, setApplicants] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [showApplicants, setShowApplicants] = useState(false);
-
-  const fetchProject = useCallback(async () => {
-    try {
-      const res = await ngoSvc.getProjectById(id);
-      setProject(res.data.project);
-    } catch {
-      setError('Could not load project.');
-    } finally {
-      setLoading(false);
-    }
+import ProjectForm, { Field, inputClass } from '../components/ProjectForm';
+const tabs = ['Overview', 'Applicants', 'Team', 'Resources', 'Photos'];
+export default function ProjectDetailPage() {
+  const {
+    id
+  } = useParams();
+  const [project, setProject] = useState(null),
+    [applicants, setApplicants] = useState([]),
+    [tab, setTab] = useState('Overview'),
+    [editing, setEditing] = useState(false),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState(''),
+    [success, setSuccess] = useState('');
+  const load = useCallback(async () => {
+    const [p, a] = await Promise.all([ngo.getProjectById(id), ngo.getApplicants(id)]);
+    setProject(p.data.project);
+    setApplicants(a.data.applicants);
   }, [id]);
-
-  const fetchApplicants = useCallback(async () => {
-    try {
-      const res = await ngoSvc.getApplicants(id);
-      setApplicants(res.data.applicants || []);
-    } catch {
-      // silent fail
-    }
-  }, [id]);
-
   useEffect(() => {
-    fetchProject();
-    fetchApplicants();
-  }, [fetchProject, fetchApplicants]);
-
-  const advanceStatus = async () => {
-    const nextStatus = STATUS_NEXT[project.status];
-    if (!nextStatus) return;
-    if (!window.confirm(`Move project to "${nextStatus.replace(/_/g, ' ')}"?`)) return;
-    setActionLoading(true);
+    load().catch(e => setError(e.response?.data?.message || 'Could not load project.'));
+  }, [load]);
+  const action = async (fn, message) => {
+    setBusy(true);
+    setError('');
+    setSuccess('');
     try {
-      const res = await ngoSvc.updateProjectStatus(id, nextStatus);
-      setProject(res.data.project);
-      setSuccess('Project status updated!');
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to update status.');
+      await fn();
+      await load();
+      setSuccess(message);
+      return true;
+    } catch (e) {
+      setError(e.response?.data?.message || 'Could not save changes.');
+      return false;
     } finally {
-      setActionLoading(false);
+      setBusy(false);
     }
   };
-
-  const completeProject = async () => {
-    if (!window.confirm('Mark this project as COMPLETED? This will update NGO impact statistics.')) return;
-    setActionLoading(true);
-    try {
-      const res = await ngoSvc.completeProject(id);
-      setProject(res.data.project);
-      setSuccess('🎉 Project completed! Impact stats updated.');
-      setTimeout(() => setSuccess(''), 5000);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to complete project.');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleReview = async (appId, status) => {
-    setActionLoading(true);
-    try {
-      await ngoSvc.reviewApplicant(id, appId, status);
-      await fetchApplicants();
-      if (status === 'accepted') await fetchProject();
-      setSuccess(`Applicant ${status}.`);
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to update applicant.');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh] text-brand-600">
-        <Loader2 className="w-8 h-8 animate-spin" />
-      </div>
-    );
-  }
-
-  if (error && !project) {
-    return (
-      <div className="max-w-2xl mx-auto px-4 py-16 text-center">
-        <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-3" />
-        <p className="font-bold text-stone-700">{error}</p>
-        <button onClick={() => navigate(-1)} className="mt-4 text-sm text-brand-600 hover:underline">← Go back</button>
-      </div>
-    );
-  }
-
-  const CAT_LABEL = {
-    cleaning: 'Cleaning', repair: 'Repair', environment: 'Environment',
-    education: 'Education', elderly_support: 'Elderly Support',
-    animal_welfare: 'Animal Welfare', health: 'Health', other: 'Other',
-  };
-
-  const nextStatus = project ? STATUS_NEXT[project.status] : null;
-  const pendingCount = applicants.filter((a) => a.status === 'pending').length;
-
-  return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-6">
-      {/* Back */}
-      <button
-        onClick={() => navigate(-1)}
-        className="flex items-center gap-2 text-sm text-stone-500 hover:text-brand-700 transition"
-      >
-        <ArrowLeft className="w-4 h-4" /> Back to Projects
-      </button>
-
-      {/* Project Header */}
-      {project && (
-        <>
-          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-stone-200 shadow-sm space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-              <div className="flex-1 min-w-0">
-                <span className="text-xs font-semibold text-brand-700 bg-brand-50 px-2 py-0.5 rounded-full border border-brand-200">
-                  {CAT_LABEL[project.category] || project.category}
-                </span>
-                <h1 className="text-xl sm:text-2xl font-extrabold text-stone-900 mt-2 leading-snug">{project.title}</h1>
-                <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500 mt-2">
-                  {project.location?.city && (
-                    <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{project.location.city}{project.location.area ? `, ${project.location.area}` : ''}</span>
-                  )}
-                  {project.timeline?.expectedEndDate && (
-                    <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />Due {new Date(project.timeline.expectedEndDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })}</span>
-                  )}
-                  <span className="flex items-center gap-1"><Users className="w-3 h-3" />{project.teamMembers?.length || 0}/{project.volunteersNeeded || 0} volunteers</span>
-                </div>
-              </div>
-
-              {/* Status Actions */}
-              <div className="flex flex-col gap-2 shrink-0">
-                {nextStatus && nextStatus !== null && (
-                  <button
-                    onClick={advanceStatus}
-                    disabled={actionLoading}
-                    className="flex items-center gap-1.5 text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 px-4 py-2 rounded-xl transition-colors shadow disabled:opacity-70"
-                  >
-                    {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Flag className="w-3.5 h-3.5" />}
-                    {STATUS_NEXT_LABEL[project.status] || 'Advance Status'}
-                  </button>
-                )}
-                {project.status === 'in_progress' && (
-                  <button
-                    onClick={completeProject}
-                    disabled={actionLoading}
-                    className="flex items-center gap-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-xl transition-colors shadow disabled:opacity-70"
-                  >
-                    {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                    Complete Project
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Status Pipeline */}
-            <StatusPipeline currentStatus={project.status} />
-          </div>
-
-          {/* Alerts */}
-          {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl">{error}</div>}
-          {success && <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm px-4 py-3 rounded-xl">{success}</div>}
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left column: details */}
-            <div className="lg:col-span-2 space-y-5">
-              {/* Description */}
-              <Section title="About This Project">
-                {project.problemStatement && (
-                  <div>
-                    <p className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-1">Problem Statement</p>
-                    <p className="text-sm text-stone-700 leading-relaxed">{project.problemStatement}</p>
-                  </div>
-                )}
-                <div>
-                  <p className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-1">Description</p>
-                  <p className="text-sm text-stone-700 leading-relaxed">{project.description}</p>
-                </div>
-              </Section>
-
-              {/* Milestones */}
-              {project.milestones?.length > 0 && (
-                <Section title="Milestones">
-                  <ul className="space-y-2">
-                    {project.milestones.map((m) => (
-                      <li key={m._id} className="flex items-start gap-3">
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${m.completed ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-stone-300'}`}>
-                          {m.completed && <CheckCircle className="w-3 h-3" />}
-                        </div>
-                        <div>
-                          <p className={`text-sm font-medium ${m.completed ? 'text-stone-400 line-through' : 'text-stone-800'}`}>{m.title}</p>
-                          {m.targetDate && (
-                            <p className="text-xs text-stone-400">{new Date(m.targetDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })}</p>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </Section>
-              )}
-
-              {/* Required Skills */}
-              {project.requiredSkills?.length > 0 && (
-                <Section title="Required Skills">
-                  <div className="flex flex-wrap gap-2">
-                    {project.requiredSkills.map((s) => (
-                      <span key={s} className="text-xs bg-brand-50 text-brand-700 px-2.5 py-1 rounded-full border border-brand-200">{s}</span>
-                    ))}
-                  </div>
-                </Section>
-              )}
-            </div>
-
-            {/* Right column: stats + applicants */}
-            <div className="space-y-5">
-              {/* Funding */}
-              {project.fundingRequired > 0 && (
-                <Section title="Funding">
-                  <FundingProgressBar
-                    required={project.fundingRequired}
-                    received={project.fundingReceived}
-                    spent={project.fundingSpent}
-                  />
-                </Section>
-              )}
-
-              {/* Beneficiaries */}
-              {(project.beneficiaries?.estimatedCount > 0 || project.beneficiaries?.description) && (
-                <Section title="Beneficiaries">
-                  {project.beneficiaries.estimatedCount > 0 && (
-                    <p className="text-2xl font-extrabold text-brand-700">{project.beneficiaries.estimatedCount.toLocaleString()}</p>
-                  )}
-                  {project.beneficiaries.description && (
-                    <p className="text-xs text-stone-500 leading-relaxed">{project.beneficiaries.description}</p>
-                  )}
-                </Section>
-              )}
-
-              {/* Materials */}
-              {project.materialsNeeded?.length > 0 && (
-                <Section title="Materials Needed">
-                  <ul className="space-y-2">
-                    {project.materialsNeeded.map((m) => (
-                      <li key={m._id} className="flex justify-between text-xs">
-                        <span className="text-stone-700 font-medium">{m.item}</span>
-                        <span className="text-stone-500">{m.quantityReceived}/{m.quantityNeeded}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </Section>
-              )}
-            </div>
-          </div>
-
-          {/* Applicants section */}
-          <Section title={`Volunteer Applications (${applicants.length})${pendingCount > 0 ? ` — ${pendingCount} pending` : ''}`}>
-            <button
-              onClick={() => setShowApplicants(!showApplicants)}
-              className="flex items-center gap-1.5 text-xs font-semibold text-brand-700 hover:text-brand-800 transition"
-            >
-              <ChevronDown className={`w-4 h-4 transition-transform ${showApplicants ? 'rotate-180' : ''}`} />
-              {showApplicants ? 'Hide' : 'Show'} Applicants
-            </button>
-
-            {showApplicants && (
-              <div className="space-y-3 mt-3">
-                {applicants.length === 0 ? (
-                  <p className="text-sm text-stone-400 text-center py-4">No applications yet.</p>
-                ) : (
-                  applicants.map((a) => (
-                    <ApplicantCard
-                      key={a._id}
-                      applicant={a}
-                      onReview={handleReview}
-                      loading={actionLoading}
-                    />
-                  ))
-                )}
-              </div>
-            )}
-          </Section>
-        </>
-      )}
-    </div>
-  );
-};
-
-export default ProjectDetailPage;
+  const next = project && STATUSES[STATUSES.indexOf(project.status) + 1];
+  const reason = !project ? '' : project.status !== 'in_progress' ? 'Advance the project to In progress first.' : !project.photos?.after?.length ? 'Upload at least one after photo.' : !(project.beneficiaries?.estimatedCount > 0) ? 'Set a positive beneficiary count in Edit project.' : '';
+  return <div className="max-w-6xl mx-auto p-6 space-y-6"><Link to="/ngo/projects" className="text-brand-700">Back to projects</Link>{error && <p role="alert" className="bg-red-50 text-red-700 p-4 rounded-xl">{error}</p>}{success && <p role="status" className="text-brand-700">{success}</p>}{!project ? <p>{error ? 'Project unavailable.' : 'Loading project...'}</p> : <><div className="flex flex-wrap justify-between gap-4"><div><h1 className="text-3xl font-bold">{project.title}</h1><p className="text-stone-600 mt-2">{project.location.city} · {project.category.replaceAll('_', ' ')}</p></div><button onClick={() => setEditing(v => !v)} className="border rounded-xl px-4 py-2">{editing ? 'Close editor' : 'Edit project'}</button></div><StatusPipeline currentStatus={project.status} /><div className="flex flex-wrap gap-3 items-center">{next && next !== 'completed' && <button disabled={busy} className="bg-brand-600 text-white rounded-xl px-4 py-2 disabled:opacity-50" onClick={() => action(() => ngo.updateProjectStatus(id, next), 'Status updated.')}>Move to {next.replaceAll('_', ' ')}</button>}{project.status !== 'completed' && <><button disabled={busy || !!reason} title={reason || 'Complete this project'} aria-describedby="completion-help" className="bg-accent-500 text-white rounded-xl px-4 py-2 disabled:opacity-50" onClick={() => action(() => ngo.completeProject(id), 'Project completed. Impact statistics updated.')}>Mark as completed</button><p id="completion-help" className="text-sm text-stone-600">{reason}</p></>}</div>{editing && <section className="bg-white border rounded-2xl p-6"><h2 className="text-xl font-bold mb-4">Edit project</h2><ProjectForm key={project._id} initial={project} busy={busy} onSave={async data => {
+          if (await action(() => ngo.updateProject(id, data), 'Project saved.')) setEditing(false);
+        }} /></section>}<div role="tablist" aria-label="Project management" className="flex gap-2 flex-wrap">{tabs.map((name, i) => <button key={name} id={`tab-${name}`} role="tab" aria-selected={tab === name} aria-controls={`panel-${name}`} tabIndex={tab === name ? 0 : -1} onKeyDown={e => {
+          if (['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(e.key)) {
+            e.preventDefault();
+            const n = e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+            setTab(tabs[n]);
+            document.getElementById(`tab-${tabs[n]}`)?.focus();
+          }
+        }} onClick={() => setTab(name)} className={`rounded-xl px-4 py-2 border ${tab === name ? 'bg-brand-600 text-white' : 'bg-white'}`}>{name}{name === 'Applicants' ? ` (${applicants.length})` : ''}</button>)}</div><section role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="bg-white border rounded-2xl p-6 space-y-5">{tab === 'Overview' && <><h2 className="text-xl font-bold">Project overview</h2><h3 className="font-semibold">Problem statement</h3><p className="whitespace-pre-wrap">{project.problemStatement || 'Not specified'}</p><h3 className="font-semibold">Description</h3><p className="whitespace-pre-wrap">{project.description}</p><p>Beneficiaries: <strong>{project.beneficiaries.estimatedCount}</strong> — {project.beneficiaries.description}</p><p>Required skills: {project.requiredSkills.join(', ') || 'All skills welcome'}</p><p>{project.teamMembers.length} accepted / {project.volunteersNeeded} volunteers needed · {project.volunteerHours || 0} recorded hours</p><p>Timeline: {project.timeline?.startDate ? new Date(project.timeline.startDate).toLocaleDateString() : 'Not set'} to {project.timeline?.expectedEndDate ? new Date(project.timeline.expectedEndDate).toLocaleDateString() : 'Not set'}</p>{project.sourceProblemId && <p>Adopted from community report: {project.sourceProblemId.title}</p>}<h3 className="font-semibold">Milestones</h3>{project.milestones.map(m => <p key={m._id}>{m.completed ? '✓' : '○'} {m.title} {m.targetDate ? `— ${new Date(m.targetDate).toLocaleDateString()}` : ''}</p>)}{!project.milestones.length && <p>No milestones set yet.</p>}<FundingProgressBar required={project.fundingRequired} received={project.fundingReceived} spent={project.fundingSpent} /></>}{tab === 'Applicants' && <>{applicants.map(a => <ApplicantCard key={a._id} applicant={a} loading={busy || project.status === 'completed'} onReview={(appId, status) => action(() => ngo.reviewApplicant(id, appId, status), `Application ${status}.`)} />)}{!applicants.length && <p>No volunteer applications yet.</p>}</>}{tab === 'Team' && <><h2 className="text-xl font-bold">Accepted volunteers</h2>{project.teamMembers.map(m => <div key={m._id} className="border rounded-xl p-3"><strong>{m.name}</strong><p>{m.email}</p></div>)}{!project.teamMembers.length && <p>Accept applications to form your team.</p>}<p className="text-stone-600">Team workspace coming soon.</p></>}{tab === 'Resources' && <Resources key={project.updatedAt} project={project} busy={busy} save={data => action(() => ngo.updateProjectResources(id, data), 'Resources updated.')} />}{tab === 'Photos' && <Photos project={project} busy={busy} upload={data => action(() => ngo.uploadProjectPhotos(id, data), 'Photos uploaded.')} />}</section></>}</div>;
+}
+function Resources({
+  project,
+  busy,
+  save
+}) {
+  const [spent, setSpent] = useState(project.fundingSpent),
+    [materials, setMaterials] = useState(project.materialsNeeded.map(m => ({
+      _id: m._id,
+      quantityReceived: m.quantityReceived
+    }))),
+    [note, setNote] = useState('');
+  return <><h2 className="text-xl font-bold">Resource transparency</h2><FundingProgressBar required={project.fundingRequired} received={project.fundingReceived} spent={project.fundingSpent} /><form className="space-y-4" onSubmit={e => {
+      e.preventDefault();
+      save({
+        materials,
+        fundingSpent: Number(spent),
+        receiptNote: note
+      });
+    }}>{project.materialsNeeded.map((m, i) => <div key={m._id} className="space-y-2"><Field label={`${m.item}: ${m.quantityReceived} received / ${m.quantityNeeded} needed`}><input className={inputClass} type="number" min="0" step="any" required value={materials[i].quantityReceived} onChange={e => setMaterials(v => v.map((row, j) => i === j ? {
+            ...row,
+            quantityReceived: Number(e.target.value)
+          } : row))} /></Field><progress aria-label={`${m.item} received`} className="w-full accent-teal-600" max={m.quantityNeeded} value={Math.min(m.quantityNeeded, m.quantityReceived)} /></div>)}<Field label="Total funding spent (INR)"><input type="number" step="0.01" min="0" required className={inputClass} value={spent} onChange={e => setSpent(e.target.value)} /></Field><Field label="Required note or receipt reference"><textarea required maxLength={2000} className={inputClass} value={note} onChange={e => setNote(e.target.value)} /></Field><button disabled={busy} className="bg-brand-600 text-white rounded-xl px-4 py-2 disabled:opacity-50">Save resources</button></form><h3 className="font-semibold">Update history</h3>{[...(project.resourceUpdates || [])].reverse().map(update => <div key={update._id} className="border rounded-xl p-3"><p>{update.note}</p><p className="text-sm text-stone-500">{new Date(update.createdAt).toLocaleString()} · Total spent: INR {update.fundingSpent}</p></div>)}</>;
+}
+function Photos({
+  project,
+  busy,
+  upload
+}) {
+  const [category, setCategory] = useState('progress'),
+    [files, setFiles] = useState([]);
+  return <><h2 className="text-xl font-bold">Impact photos</h2><form className="flex flex-wrap gap-3 items-end" onSubmit={async e => {
+      e.preventDefault();
+      const element = e.currentTarget;
+      const data = new FormData();
+      data.append('category', category);
+      files.forEach(f => data.append('photos', f));
+      if (await upload(data)) {
+        setFiles([]);
+        element.reset();
+      }
+    }}><Field label="Photo stage"><select className={inputClass} value={category} onChange={e => setCategory(e.target.value)}>{['before', 'progress', 'after'].map(c => <option key={c}>{c}</option>)}</select></Field><Field label="Images (up to 6, 5 MB each)"><input required type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={e => {
+          e.target.setCustomValidity(e.target.files.length > 6 || [...e.target.files].some(f => f.size > 5 * 1024 * 1024) ? 'Choose up to 6 images, each at most 5 MB.' : '');
+          setFiles([...e.target.files]);
+        }} /></Field><button disabled={busy || !files.length} className="bg-brand-600 text-white rounded-xl px-4 py-2 disabled:opacity-50">Upload photos</button></form>{['before', 'progress', 'after'].map(stage => <div key={stage}><h3 className="font-semibold capitalize my-3">{stage}</h3><div className="grid sm:grid-cols-3 gap-3">{project.photos[stage].map((url, i) => <a key={`${url}-${i}`} href={url} target="_blank" rel="noreferrer"><img src={url} alt={`${stage} photo ${i + 1} of ${project.title}`} className="rounded-xl object-cover w-full h-48" /></a>)}</div>{!project.photos[stage].length && <p className="text-stone-500">No {stage} photos yet.</p>}</div>)}</>;
+}

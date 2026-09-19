@@ -1,5 +1,11 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import NGODashboardPage from './pages/NGODashboardPage';
+import NGOProfilePage from './pages/NGOProfilePage';
+import NGODiscoverProblemsPage from './pages/NGODiscoverProblemsPage';
+import CreateProjectPage from './pages/CreateProjectPage';
+import MyProjectsPage from './pages/MyProjectsPage';
+import ProjectDetailPage from './pages/ProjectDetailPage';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import LandingPage from './pages/LandingPage';
@@ -17,7 +23,6 @@ import MyImpactPage from './pages/MyImpactPage';
 import SavedPage from './pages/SavedPage';
 import {
   CommunityDashboard,
-  NGODashboard,
   CSRDashboard,
   AdminDashboard
 } from './pages/Dashboards';
@@ -131,8 +136,8 @@ export const App = () => {
             path="/ngo/dashboard"
             element={
               <ProtectedRoute>
-                <RoleProtectedRoute allowedRoles={['ngo', 'admin']}>
-                  <NGODashboard />
+                <RoleProtectedRoute allowedRoles={['ngo']}>
+                  <NGODashboardPage />
                 </RoleProtectedRoute>
               </ProtectedRoute>
             }
@@ -160,6 +165,14 @@ export const App = () => {
             }
           />
 
+          <Route element={<RoleProtectedRoute allowedRoles={['ngo']} />}>
+            <Route path="/ngo/profile" element={<NGOProfilePage />} />
+            <Route path="/ngo/discover-problems" element={<NGODiscoverProblemsPage />} />
+            <Route path="/ngo/projects/new" element={<CreateProjectPage />} />
+            <Route path="/ngo/projects" element={<MyProjectsPage />} />
+            <Route path="/ngo/projects/:id" element={<ProjectDetailPage />} />
+            <Route path="/ngo/*" element={<Navigate to="/ngo/dashboard" replace />} />
+          </Route>
           {/* Catch-all redirect */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

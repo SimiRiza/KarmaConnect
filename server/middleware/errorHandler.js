@@ -29,6 +29,8 @@ export const errorHandler = (err, req, res, next) => {
     }));
   }
 
+  if (err.name === 'CastError' || err.name === 'MulterError') { statusCode = 400; message = 'Invalid input: ' + err.message; }
+
   // Handle JWT invalid or expired error
   if (err.name === 'JsonWebTokenError') {
     statusCode = 401;

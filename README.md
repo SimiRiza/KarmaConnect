@@ -164,3 +164,43 @@ This starts:
 - [ ] **Prompt 6** — Contributions, Budgets & Impact Tracking
 - [ ] **Prompt 7** — Verification System, Trust Scores & Notifications
 - [ ] **Prompt 8** — Final UI, Admin Console & Production Polish
+
+## Prompt 3: NGO dashboard
+
+NGO accounts use `/ngo/dashboard`, `/ngo/profile`, `/ngo/discover-problems`,
+`/ngo/projects/new`, `/ngo/projects`, and `/ngo/projects/:id`. Creating or adopting
+projects requires an NGOProfile with `verificationStatus: "verified"`. Pending and
+rejected NGOs can browse and edit their profiles. Verification can only be changed
+by an administrator; the admin interface is intentionally deferred to Prompt 8.
+
+### Database requirements
+
+Adoption, linked status/completion updates, applicant review, and resource tracking
+use strict MongoDB transactions. Use MongoDB Atlas or a local replica set. A
+standalone database returns a clear 503 for these operations without partial writes.
+For local persistent development, start MongoDB with `--replSet rs0`, initialize it
+once using `rs.initiate()` in mongosh, and set a URI such as
+`mongodb://localhost:27017/karmaconnect?replicaSet=rs0` with `USE_IN_MEMORY_DB=false`.
+The existing `USE_IN_MEMORY_DB=true` mode attempts a temporary single-node replica
+set; its contents disappear when it stops. No existing application data is seeded,
+deleted or changed by the tests.
+
+At startup, the server adds unique non-null source-problem and application-target
+indexes. It replaces only the known legacy `userId_1_problemId_1` application index,
+after its partial replacement exists. It stops startup on conflicting historical
+source-project links instead of deleting or silently merging records.
+
+### Verification commands
+
+From `server`, run `npm.cmd test` on Windows (or `npm test` elsewhere). The suite
+includes 34 checks across authentication, community features and NGO workflows.
+From `client`, run `npm.cmd run build` for the production frontend build.
+
+From `server`, `node scripts/verifyNgoBrowser.mjs` exercises the complete NGO flow
+and community signup/login/post/apply in headless Chrome using a temporary browser
+profile and isolated database. The script currently uses the standard Windows
+Chrome installation path. It writes screenshots to `artifacts/ngo-browser/` and
+cleans up its uploaded test files. The first run may need the MongoDB binary download.
+
+See `gemini.md` for reciprocal Problem/Project links, status rules, recorded
+volunteer hours, resource receipt history, and the Prompt 5/6 extension boundaries.

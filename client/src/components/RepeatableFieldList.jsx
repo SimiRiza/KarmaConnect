@@ -2,7 +2,7 @@ import React from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 
 /**
- * RepeatableFieldList — manages a list of string-value rows.
+ * RepeatableFieldList — manages string rows or structured rows through renderRow/createItem.
  * Props:
  *   items: string[]
  *   onChange: (newItems: string[]) => void
@@ -16,6 +16,8 @@ const RepeatableFieldList = ({
   placeholder = 'Enter value',
   addLabel = 'Add Item',
   maxItems = 20,
+  renderRow,
+  createItem = () => "",
 }) => {
   const handleChange = (idx, value) => {
     const updated = [...items];
@@ -25,7 +27,7 @@ const RepeatableFieldList = ({
 
   const handleAdd = () => {
     if (items.length >= maxItems) return;
-    onChange([...items, '']);
+    onChange([...items, createItem()]);
   };
 
   const handleRemove = (idx) => {
@@ -37,13 +39,13 @@ const RepeatableFieldList = ({
     <div className="space-y-2">
       {items.map((item, idx) => (
         <div key={idx} className="flex gap-2 items-center">
-          <input
+          {renderRow ? renderRow(item, idx, value => handleChange(idx, value)) : <input
             type="text"
             value={item}
             onChange={(e) => handleChange(idx, e.target.value)}
             placeholder={placeholder}
             className="flex-1 border border-stone-200 rounded-xl px-3 py-2 text-sm text-stone-800 placeholder-stone-400 focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 transition"
-          />
+          />}
           <button
             type="button"
             onClick={() => handleRemove(idx)}

@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import ProblemCard from '../components/ProblemCard';
+import ApplyModal from '../components/ApplyModal';
 import * as communityService from '../services/communityService';
 import { HeartHandshake, GraduationCap, Building2, ShieldCheck, LogOut, User, Calendar, MapPin, CheckCircle, Clock, Sparkles, ArrowRight, Target, Briefcase, Bookmark } from 'lucide-react';
 

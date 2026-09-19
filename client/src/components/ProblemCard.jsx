@@ -6,7 +6,7 @@ import UrgencyBadge from './UrgencyBadge';
 
 const defaultImage = 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1200&q=80';
 
-export const ProblemCard = ({ problem, saved = false, onToggleSave, matchScore, onApply }) => {
+export const ProblemCard = ({ problem, saved = false, onToggleSave, matchScore, onApply, onAdopt, adoptDisabled = false }) => {
   const image = problem?.photos?.[0] || defaultImage;
   const locationText = problem?.location ? [problem.location.city, problem.location.area].filter(Boolean).join(' • ') : 'Location not specified';
 
@@ -17,7 +17,7 @@ export const ProblemCard = ({ problem, saved = false, onToggleSave, matchScore, 
           <img src={image} alt={problem.title} className="h-48 w-full object-cover" />
           <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-2 p-3">
             <StatusBadge status={problem.status} />
-            <button
+            {!onAdopt && <button
               type="button"
               onClick={(e) => {
                 e.preventDefault();
@@ -28,7 +28,7 @@ export const ProblemCard = ({ problem, saved = false, onToggleSave, matchScore, 
               title={saved ? 'Remove from saved' : 'Save this problem'}
             >
               {saved ? <BookmarkCheck className="h-4 w-4 text-brand-700" /> : <Bookmark className="h-4 w-4" />}
-            </button>
+            </button>}
           </div>
         </div>
 
@@ -73,13 +73,13 @@ export const ProblemCard = ({ problem, saved = false, onToggleSave, matchScore, 
             I Want to Help
           </button>
         ) : null}
-        <Link
+        {onAdopt ? <button disabled={adoptDisabled} onClick={() => onAdopt(problem)} className="w-full rounded-xl bg-accent-500 px-4 py-3 font-semibold text-white disabled:opacity-50">Adopt This Problem</button> : <Link
           to={`/problems/${problem._id}`}
           className={`rounded-xl border border-stone-300 py-2.5 px-3 text-xs sm:text-sm font-semibold text-stone-700 transition hover:bg-stone-50 flex items-center justify-center gap-1 ${onApply ? '' : 'w-full bg-brand-50/50 hover:bg-brand-50 text-brand-800 border-brand-200 font-bold'}`}
         >
           <span>Details</span>
           <ArrowRight className="h-3.5 w-3.5" />
-        </Link>
+        </Link>}
       </div>
     </div>
   );

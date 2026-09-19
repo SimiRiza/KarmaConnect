@@ -58,7 +58,7 @@ export const Navbar = () => {
             <Link to="/#how-it-works" className="text-sm font-medium text-stone-600 hover:text-stone-900 transition-colors">
               How It Works
             </Link>
-            <Link to="/discover" className="text-sm font-medium text-stone-600 hover:text-stone-900 transition-colors">
+            <Link to={user?.role === "ngo" ? "/ngo/discover-problems" : "/discover"} className="text-sm font-medium text-stone-600 hover:text-stone-900 transition-colors">
               Explore Projects
             </Link>
           </div>
@@ -118,6 +118,7 @@ export const Navbar = () => {
         </div>
       </div>
 
+      {user?.role === 'ngo' && <div className="flex flex-wrap justify-center gap-5 border-t px-4 py-2 text-sm text-brand-800" aria-label="NGO navigation">{[['/ngo/dashboard', 'Overview'], ['/ngo/discover-problems', 'Discover'], ['/ngo/projects', 'My projects'], ['/ngo/profile', 'NGO profile']].map(([path, label]) => <Link key={path} to={path}>{label}</Link>)}</div>}
       {/* Mobile Menu Dropdown */}
       {mobileMenuOpen && (
         <div className="md:hidden border-b border-stone-200 bg-white px-4 pt-3 pb-5 space-y-3">
@@ -129,7 +130,7 @@ export const Navbar = () => {
             How It Works
           </Link>
           <Link
-            to="/discover"
+            to={user?.role === "ngo" ? "/ngo/discover-problems" : "/discover"}
             onClick={() => setMobileMenuOpen(false)}
             className="block py-2 text-stone-700 font-medium"
           >

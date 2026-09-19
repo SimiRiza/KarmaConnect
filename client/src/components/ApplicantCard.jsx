@@ -56,6 +56,8 @@ const ApplicantCard = ({ applicant, onReview, loading = false }) => {
           </div>
         )}
 
+        <p className="text-sm text-stone-600">{profile.subType?.replaceAll('_', ' ')}{profile.availability ? ' ? ' + profile.availability : ''}</p>
+        <p className="text-sm text-stone-600">Offered skills: {(applicant.relevantSkills || []).join(', ') || 'Not specified'}</p>
         {/* Note */}
         {applicant.note && (
           <p className="text-xs text-stone-600 bg-stone-50 rounded-lg p-2 border border-stone-100 line-clamp-2">

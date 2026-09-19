@@ -138,6 +138,9 @@ const projectSchema = new mongoose.Schema(
       type: [materialNeededSchema],
       default: []
     },
+    volunteerHours: { type: Number, default: 0, min: 0 },
+    resourceUpdates: [{ note: { type: String, required: true }, fundingSpent: Number, materials: [{ materialId: String, quantityReceived: Number }], createdAt: { type: Date, default: Date.now } }],
+    // Prompt 5 extends teamMembers; Prompt 6 wires real contributions into fundingReceived.
     fundingRequired: {
       type: Number,
       default: 0,
@@ -197,7 +200,7 @@ const projectSchema = new mongoose.Schema(
 
 // Indexes
 projectSchema.index({ ngoId: 1, status: 1 });
-projectSchema.index({ sourceProblemId: 1 });
+projectSchema.index({ sourceProblemId: 1 }, { name: 'unique_source_problem', unique: true, partialFilterExpression: { sourceProblemId: { $type: 'objectId' } } });
 projectSchema.index({ 'location.city': 1, category: 1, status: 1 });
 projectSchema.index({ title: 'text', description: 'text' });
 

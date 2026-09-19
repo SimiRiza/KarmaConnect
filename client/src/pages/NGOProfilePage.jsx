@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import * as ngoSvc from '../services/ngoService';
+import SkillsChipInput from '../components/SkillsChipInput';
 import VerificationBadge from '../components/VerificationBadge';
 import RepeatableFieldList from '../components/RepeatableFieldList';
 import { Save, Loader2, Plus, Trash2, User } from 'lucide-react';
@@ -42,6 +43,7 @@ const NGOProfilePage = () => {
     locationsServed: [],
     contactPersonName: '',
     contactPhone: '',
+    photos: [],
     team: [],
   });
 
@@ -57,6 +59,7 @@ const NGOProfilePage = () => {
         locationsServed: p.locationsServed || [],
         contactPersonName: p.contactPersonName || '',
         contactPhone: p.contactPhone || '',
+        photos: p.photos || [],
         team: p.team || [],
       });
     }).catch(() => setError('Could not load profile.')).finally(() => setLoading(false));
@@ -88,7 +91,7 @@ const NGOProfilePage = () => {
       setSuccess('Profile updated successfully!');
       setTimeout(() => setSuccess(''), 4000);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to save profile.');
+      setError(err.response?.data?.errors?.map(e => e.message).join(' ') || err.response?.data?.message || 'Failed to save profile.');
     } finally {
       setSaving(false);
     }
@@ -121,6 +124,7 @@ const NGOProfilePage = () => {
         {user?.email && <p className="text-stone-500">Account Email: <span className="font-semibold text-stone-800">{user.email}</span></p>}
       </div>
 
+      <p className="bg-brand-50 border border-brand-200 rounded-xl p-4">Verification confirms that your organization has been reviewed. Only an administrator can change this status. Verified NGOs can adopt problems and create projects.</p>
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-6 bg-white rounded-3xl p-6 sm:p-8 border border-stone-200 shadow-sm">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -140,8 +144,8 @@ const NGOProfilePage = () => {
         </FIELD>
 
         <FIELD label="Cause / Focus Areas">
-          <RepeatableFieldList
-            items={form.causeAreas}
+          <SkillsChipInput
+            value={form.causeAreas}
             onChange={(v) => setForm((f) => ({ ...f, causeAreas: v }))}
             placeholder="e.g. Environment, Education"
             addLabel="Add Cause Area"
@@ -149,14 +153,16 @@ const NGOProfilePage = () => {
         </FIELD>
 
         <FIELD label="Locations Served (Cities / Districts)">
-          <RepeatableFieldList
-            items={form.locationsServed}
+          <SkillsChipInput
+            value={form.locationsServed}
             onChange={(v) => setForm((f) => ({ ...f, locationsServed: v }))}
             placeholder="e.g. Mumbai, Pune"
             addLabel="Add Location"
           />
         </FIELD>
 
+        <FIELD label="Organization photo URLs"><RepeatableFieldList items={form.photos} onChange={photos => setForm(f => ({ ...f, photos }))} placeholder="https://..." addLabel="Add photo" /></FIELD>
+        <div className="grid grid-cols-3 gap-3">{form.photos.filter(Boolean).map((url, i) => <img key={i} src={url} alt="Organization" className="h-24 w-full object-cover rounded-xl" />)}</div>
         {/* Team Members */}
         <div>
           <div className="flex items-center justify-between mb-3">
@@ -167,23 +173,24 @@ const NGOProfilePage = () => {
           </div>
           <div className="space-y-3">
             {form.team.map((member, idx) => (
-              <div key={idx} className="flex gap-2 items-center bg-stone-50 rounded-xl p-3 border border-stone-100">
+              <div key={idx} className="flex flex-wrap gap-2 items-center bg-stone-50 rounded-xl p-3 border border-stone-100">
                 <div className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-xs font-bold shrink-0">
-                  {member.name ? member.name.charAt(0).toUpperCase() : <User className="w-4 h-4" />}
+                  {member.photoUrl ? <img src={member.photoUrl} alt={member.name || 'Team member'} className="w-8 h-8 rounded-full object-cover" /> : member.name ? member.name.charAt(0).toUpperCase() : <User className="w-4 h-4" />}
                 </div>
                 <INPUT
-                  value={member.name}
+                  aria-label="Team member name" required value={member.name}
                   onChange={(e) => handleTeamChange(idx, 'name', e.target.value)}
                   placeholder="Full name"
                   className="flex-1 border border-stone-200 rounded-lg px-2.5 py-1.5 text-sm text-stone-800 focus:outline-none focus:border-brand-400 transition"
                 />
                 <INPUT
-                  value={member.role}
+                  aria-label="Team member role" required value={member.role}
                   onChange={(e) => handleTeamChange(idx, 'role', e.target.value)}
                   placeholder="Role / Title"
                   className="flex-1 border border-stone-200 rounded-lg px-2.5 py-1.5 text-sm text-stone-800 focus:outline-none focus:border-brand-400 transition"
                 />
-                <button type="button" onClick={() => removeTeamMember(idx)} className="p-1.5 text-red-400 hover:text-red-600 transition">
+                <INPUT aria-label="Team member photo URL" value={member.photoUrl} onChange={e => handleTeamChange(idx, 'photoUrl', e.target.value)} placeholder="Photo URL (optional)" />
+                <button aria-label="Remove team member" type="button" onClick={() => removeTeamMember(idx)} className="p-1.5 text-red-400 hover:text-red-600 transition">
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>

@@ -1,180 +1,97 @@
-# Implementation Plan — Prompt 2: Community User / Volunteer Dashboard
+﻿# Implementation Plan - Prompt 3: NGO Dashboard
 
-## Goal
-Add the full community-user dashboard experience without disturbing the existing Prompt 1 foundation: authentication, role-based routing, signup/login/logout, password reset flow, and all current schema patterns.
+Status: Approved by the user and implemented. See gemini.md for final decisions and validation results.
 
-## Scope Guardrails
-- Only build the community_user experience for this prompt.
-- Do not touch the NGO or CSR signup/profile logic from Prompt 1.
-- Do not add NGO/CSR-only routes or data visibility to this role.
-- Preserve the existing database schema and auth system as-is, extending only the required models and routes.
-- Keep placeholder models and fields clearly documented as “minimal for now” for later prompts.
+## Objective and boundaries
+Complete the NGO dashboard within the existing React/Vite/Tailwind and Express/Mongoose application. Preserve authentication, existing data, Community User features, and existing NGO work. No CSR dashboard, matching algorithm, chat, notifications, payment integration, or admin verification tools in this prompt.
 
-## Baseline Review
-- Confirm existing auth stack remains JWT + refresh-cookie based, in-memory access token, protected routes and role guards.
-- Confirm frontend currently uses React Router + AuthContext + RoleProtectedRoute pattern.
-- Confirm backend uses Express + Mongoose + middleware validation pattern.
+Read before planning: gemini.md and brandguidelines.md in the project root.
 
-## Planned Workstreams
+## Findings from the existing application
+- Project, Problem linking fields, NGO statistics/team fields, NGO services/controllers/routes, six NGO pages, and the requested reusable components already exist in partial form. Extend and repair these files rather than recreate them.
+- App.jsx still mounts the placeholder NGO dashboard and does not register the other NGO pages. Its NGO guard and the backend currently also permit admin.
+- Several existing API paths/methods differ from the requested contract.
+- Adoption uses a transaction helper that can fall back to nontransactional writes; that cannot guarantee atomic adoption.
+- The direct completion endpoint can bypass pipeline order. Direct creation accepts caller-provided status.
+- Resource updates read receiptNote but neither require nor store it. Photo routes lack multipart upload middleware.
+- Impact statistics currently invent 12 volunteer hours per team member; there is no actual hours source.
+- Discovery logic is duplicated, resource filtering is missing, and urgency sorting needs correction.
+- Existing auth and community API tests provide a regression starting point. At planning time, Prompt 3 was unchecked in gemini.md.
 
-### 1) Backend model and schema extensions
-Update only the models needed for this prompt.
+## 1. Data and business rules
+- Retain all existing model fields and add only missing fields/defaults/validation. Complete Project fields, NGOProfile photos and team editing, and persistent resource note/receipt references.
+- Keep Project.ngoId immutable and server-assigned. Direct creation forces sourceProblemId=null and initial status=adopted. Received funding and accepted team membership remain server-controlled.
+- Maintain Problem.adoptedByNgoId and Problem.linkedProjectId alongside Project.sourceProblemId. Enforce one project per non-null source problem with a partial unique index after checking existing records for conflicts; never silently discard records.
+- Preserve community Application records. Support problem-linked and project-linked applicants; adjust uniqueness with partial indexes if required so null problem IDs do not prevent applications to distinct projects. Require a valid target and preserve duplicate prevention.
+- Use one sequential status service for PUT updates, PATCH status, and completion. Allow only the same status or the next step: reported -> adopted -> team_forming -> funding_needed -> in_progress -> completed.
+- Completion requires in_progress, a persisted after-photo, and a positive beneficiary count. Repeated completion is idempotent. Synchronize linked Problem status and NGO statistics transactionally.
+- Recalculate impact in a dedicated aggregation service. Add a nonnegative, explicitly recorded Project.volunteerHours total (default 0) editable in project management, and sum completed-project totals. Do not estimate hours from team size; detailed time logs remain future work.
+- Prevent edits to completed impact inputs from leaving aggregate statistics stale: recompute in the same transaction when those inputs change.
 
-- Problem model
-  - Add fields from the spec: postedBy, title, description, category enum, photos, location, urgency, estimatedResourcesNeeded, status, timestamps.
-  - Keep geospatial data approximate only; never store exact home address.
-  - Add comments noting that this is the minimal version to support discovery and posting for Prompt 2.
+## 2. Transactions and permissions
+- Add strict transaction behavior for NGO operations without changing existing signup behavior. Adoption must fail clearly on unsupported standalone MongoDB, never fall back to partial writes.
+- Within adoption, conditionally claim a reported/unlinked problem, create its project, and save both references in one transaction. Return 409 for a conflicting adoption. Concurrent adopters must produce exactly one project.
+- Require authenticate + authorize('ngo') for all NGO endpoints and allowedRoles=['ngo'] for all NGO pages.
+- Check ownership before reading private project data, processing uploads, reviewing applications, or mutating resources. Return 403 for another NGO's project and 404 for missing records.
+- Profile writes use explicit allowed fields; verification status and aggregate stats cannot be self-assigned.
+- Proposed verification behavior: pending/rejected NGOs may view their dashboard, discover problems, and edit their profile; adopting and creating managed projects require a verified NGOProfile. Display a clear explanation and test all verification states. This interprets the request's opening scope of verified NGO accounts while keeping onboarding usable.
+- Accept/reject and team membership updates run atomically. Use deduplicated membership and define pending-only review with same-decision retries allowed, avoiding accepted-then-rejected membership inconsistencies.
 
-- User model
-  - Add savedProblems array to support saved projects.
-  - Keep all other existing fields and validations unchanged.
+## 3. API contract and shared infrastructure
+Implement the exact requested API contract and update the client service to use it. Preserve existing aliases where useful to avoid breaking existing callers.
 
-- Application model
-  - Minimal shape as requested: userId, problemId, contributionType, relevantSkills, note, status, createdAt.
-  - Add comment explaining this is intentionally minimal and will be expanded in Prompt 5.
+| Method | Route |
+| --- | --- |
+| GET, PUT | /api/ngo/me/profile |
+| GET | /api/ngo/problems |
+| POST | /api/ngo/problems/:id/adopt |
+| GET, POST | /api/ngo/projects |
+| GET, PUT | /api/ngo/projects/:id |
+| PATCH | /api/ngo/projects/:id/status |
+| GET | /api/ngo/projects/:id/applicants |
+| PATCH | /api/ngo/applications/:id |
+| PATCH | /api/ngo/projects/:id/resources |
+| POST | /api/ngo/projects/:id/photos |
+| PATCH | /api/ngo/projects/:id/complete |
+| GET | /api/ngo/dashboard-summary |
 
-- Contribution model
-  - Minimal shape as requested: userId, problemId, type, note, createdAt.
-  - Add comment explaining this is an early placeholder for the later contributions/impact tracking work.
+- Extract shared discovery filtering/pagination/sanitization from the community route. Support location, category, urgency, resources needed, and existing search/status behavior; NGO status is always reported and unlinked. Use literal escaped search, bounded pagination, and numeric urgency ordering before pagination. Preserve coordinate privacy.
+- Extract and reuse multer disk storage with existing image limits and a swappable cloud-storage comment. Accept multipart project photos by before/progress/after category, validate inputs, and clean up files on rejected uploads.
+- Require a nonblank note or receipt reference for resource updates and persist it with the update. Validate finite nonnegative values and known material IDs. General project edits must not bypass tracked received-quantity/spending updates.
+- Show required, collected, spent, remaining balance, and funding shortfall distinctly. Funding received stays a stored field for Prompt 6; do not simulate incoming money.
+- Use a project aggregation with facets/lookups where appropriate for dashboard counts and pending application previews; avoid repeated per-project queries and duplicate application counts. Nearby means the NGO's configured city/served locations; show an explicit all-locations fallback when neither is set.
+- Validate IDs, enums, numeric fields, array structures, dates, timeline order, and URL fields server-side. Keep controllers thin and response/error shapes consistent.
 
-- Project / Team / ImpactRecord / Notification
-  - Leave as placeholders. Do not redesign them beyond the small enum and minimal contribution shape needed by the front-end flow.
+## 4. Frontend completion
+Wire existing pages into App.jsx and NGO navigation, preserving other role routes and authentication behavior.
 
-### 2) Backend API routes and controllers
-Create the user/community dashboard endpoints under the authenticated + authorize('community_user') pattern.
+- /ngo/dashboard: five summary cards, top-level impact totals, nearby unadopted problems with adoption confirmation, active project pipelines, and inline pending application review.
+- /ngo/profile: about, cause/location chips, contact details, photos, editable team cards, and read-only verification badge/explanation.
+- /ngo/discover-problems: consistent ProblemCard/filter patterns, resources filter, pagination, loading/error/empty states, and adoption confirmation modal.
+- /ngo/projects/new: complete project form including beneficiaries, skills, volunteers, repeatable materials and milestones, location, and timeline. Support source-problem state prefill. Submit adoption through the transactional adopt endpoint, never create a separate direct project for that path. Quick adoption remains available with defaults.
+- /ngo/projects: owned-project cards, status filtering, pipeline, funding transparency, and volunteer/application counts.
+- /ngo/projects/:id: full details and reusable edit form; valid next-step status control; Applicants, Team, Resources, and Photos tabs; quantity/spending updates with required note; multipart galleries; completion disabled with a visible explanation until requirements are met.
+- Reuse and complete ProjectCard, StatusPipeline, FundingProgressBar, ApplicantCard, RepeatableFieldList, VerificationBadge, SkillsChipInput, and existing community patterns.
+- Match existing green/teal, coral actions, warm backgrounds, and status colors. Adopted uses teal consistently. Include accessible labels, keyboard-operable dialogs/tabs, readable text, responsive layouts, and clear save/failure feedback.
+- Team tab lists accepted volunteers; full team workspace remains Prompt 5.
 
-- Profile endpoints
-  - GET /api/users/me/profile
-  - PUT /api/users/me/profile
-  - Validate skills/interests arrays and max length = 15 each.
+## 5. Verification and acceptance checks
+Use an isolated MongoDB replica set and seeded test accounts, never destructive operations on the user's application database.
 
-- Problem discovery endpoints
-  - GET /api/problems
-  - GET /api/problems/:id
-  - Filter by location (city), category, urgency, status.
-  - Support pagination and sorting (newest, most urgent).
-  - Do not leak exact coordinates; only city/area can be returned.
+- Run existing authentication/community tests and client production build as baseline and after implementation; report baseline failures separately.
+- Add focused NGO integration tests for every requested route, validation, read/write role restrictions, verification rules, and cross-NGO ownership using two NGO accounts.
+- Test adoption success, competing simultaneous adopters, and deterministic failure between project insertion and Problem update: assert rollback leaves neither an orphan nor a partial link. Where practical, test an interrupted request/connection; transaction rollback and concurrency checks are the primary repeatable proof.
+- Test direct creation, protected fields, invalid status jumps through all mutation routes, and completion criteria, linked status synchronization, stats and idempotency.
+- Test existing problem applications and project-linked applications, deduplicated team acceptance, and rejection behavior.
+- Test resource persistence including note/receipt, invalid numbers/material IDs, upload authorization, and each gallery category.
+- Seed known data and assert every dashboard count, nearby filter, and completed impact total matches the underlying records.
+- Explicitly retest community signup, login, post-problem, and apply flows; verify save/contribute/profile regressions with the existing suite.
+- Build the client and exercise available browser flows: role redirects/direct URLs, adopt-prefill, forms, resource progress, photos, completion, responsive layouts, and loading/error states. If browser tooling or DB startup is unavailable, state that limitation instead of claiming a pass.
 
-- Problem creation endpoint
-  - POST /api/problems
-  - Validate required title, description, category, photos, location, urgency.
-  - Require user to be authenticated and authorized as community_user.
+## 6. Documentation and delivery
+- After implementation and verification, update gemini.md build status and known decisions with reciprocal Problem/Project links, strict transaction requirements, pipeline/completion rules, verification behavior, application/team relationships, the volunteer-hours source, receipt tracking, and Prompt 5/6 extension boundaries.
+- Add any necessary local replica-set setup notes to README/.env.example without changing credentials.
+- Deliver a concise summary of changes, tests/results, and any remaining limitations. Mark Prompt 3 complete only when its scope is implemented and validated.
 
-- Photo upload support for problem creation
-  - Integrate multer with local disk storage for now.
-  - Keep the interface swappable for cloud storage later.
-  - Add clear code comments noting the production replacement strategy.
-
-- Apply / join flow
-  - POST /api/problems/:id/apply
-  - Prevent duplicate applications per user/problem.
-  - Minimal Application record creation with status pending.
-  - Validate contributionType and user input.
-
-- Applicant listing
-  - GET /api/problems/:id/applicants
-  - Restrict visibility to the problem poster only for now.
-
-- Contribute flow
-  - POST /api/problems/:id/contribute
-  - Record a minimal contribution.
-  - For money, simulate the flow and clearly document the later payment integration placeholder.
-
-- Impact and saved items
-  - GET /api/users/me/impact using a MongoDB aggregation pipeline
-  - POST /api/problems/:id/save and DELETE /api/problems/:id/save
-  - GET /api/users/me/saved
-
-### 3) Validation and error handling
-- Keep controller logic thin and service-based where appropriate.
-- Match existing error response patterns from Prompt 1 (consistent success/error shape, validation messages, 400/404/401/403 patterns).
-- Ensure all new endpoints validate input server-side and reject unsafe or malformed payloads.
-
-### 4) Frontend pages and role-gated UI
-Add the new pages under the existing protected/role-protected routing model.
-
-- Dashboard Home (/dashboard)
-  - Welcome card with user’s name
-  - Nearby Problems section
-  - Recommended for You section
-  - My Active Applications
-  - My Impact summary
-  - Quick action buttons
-
-- Discover page (/discover)
-  - Search + filters + pagination
-  - Problem cards with photo, location, category, urgency, status
-  - Empty state handling
-
-- Problem detail page (/problems/:id)
-  - Photo gallery, description, badges, location, status pipeline
-  - Apply modal flow
-  - Save/unsave action
-  - Contribution modal for money/materials
-  - Already-applied state handling
-
-- Post a Problem page (/post-problem)
-  - Multi-photo upload preview
-  - Validation and redirect to detail page on success
-
-- My Profile page (/profile)
-  - Editable profile fields with chip inputs for skills, interests, cause areas
-  - Save feedback and immediate UI updates
-
-- My Applications page (/my-applications)
-  - List of applied problems with status
-
-- My Impact page (/my-impact)
-  - Expanded totals and contribution breakdown
-
-- Saved Projects page (/saved)
-  - Saved problems list using shared card component
-
-### 5) Reusable UI components
-- ProblemCard
-- StatusBadge
-- UrgencyBadge
-- ApplyModal
-- ContributeModal
-- SkillsChipInput
-- PhotoUploadPreview
-- EmptyState
-
-Follow the brand palette from brandguidelines.md exactly:
-- warm green/teal primary
-- coral/orange CTAs
-- status colors for Reported, Team Forming, Funding Needed, In Progress, Completed
-- warm neutral backgrounds
-- mobile-responsive card hierarchy
-
-### 6) Testing and verification
-Before claiming completion, verify the required behavior with focused checks:
-- auth/signup/login/logout/password reset still work unchanged
-- community_user dashboard loads correctly
-- new problem appears in Discover immediately
-- problem filtering/search narrows results
-- duplicate application is prevented
-- simulated contribution is reflected in impact totals
-- save/unsave updates the saved list
-- profile edits persist and reflect without reload
-- NGO/CSR-only routes remain unreachable from this role
-
-### 7) Documentation update
-- Update gemini.md’s Current build status to mark Prompt 2 complete once implementation is finished.
-- Add a short note under Known decisions already made describing the minimal Application and Contribution shapes so later prompts know exactly what they are extending.
-
-## Proposed Execution Order
-1. Extend backend models and schema fields.
-2. Add routes, validators, and controllers for profile / problems / applications / contributions / saved items.
-3. Wire frontend routes and protected pages.
-4. Build reusable dashboard components and page layouts.
-5. Verify against acceptance criteria and fix regressions.
-6. Update project status documentation once verified.
-
-## Risks / Constraints
-- Preserve existing Prompt 1 auth flow exactly; do not break refresh token or session behavior.
-- Do not implement NGO or CSR features in this prompt.
-- Do not over-engineer the matching system, donation gateway, or notification system; keep minimal placeholders clearly commented.
-
-## Approval Gate
-This plan is prepared and ready to execute. I am waiting for your approval before starting the actual code implementation.
+## Approval gate
+The attached user request explicitly requires: "Generate implementation_plan.md and wait for approval before executing". Approval was received before changing application code. In particular, approval includes the proposed verification behavior and recorded volunteer-hours field described above.

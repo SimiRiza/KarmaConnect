@@ -1,677 +1,489 @@
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import NGOProfile from '../models/NGOProfile.js';
-import Problem from '../models/Problem.js';
+import Problem, { PROBLEM_STATUSES } from '../models/Problem.js';
 import Project from '../models/Project.js';
 import Application from '../models/Application.js';
 import CommunityUserProfile from '../models/CommunityUserProfile.js';
-import { runInTransaction } from '../utils/transactionHelper.js';
-
-const STATUS_PIPELINE = [
-  'reported',
-  'adopted',
-  'team_forming',
-  'funding_needed',
-  'in_progress',
-  'completed'
-];
-
-/**
- * Get NGO Profile and account info.
- */
-export const getNgoProfile = async (userId) => {
-  const user = await User.findById(userId).select('-passwordHash');
-  if (!user) {
-    const err = new Error('NGO user not found.');
-    err.statusCode = 404;
-    throw err;
+import { strictTransaction } from '../utils/strictTransaction.js';
+import { discoverProblems, literal } from './problemDiscovery.js';
+const fail = (message, statusCode = 400) => {
+  throw Object.assign(new Error(message), {
+    statusCode
+  });
+};
+const id = value => {
+  if (!mongoose.isValidObjectId(value)) fail('Invalid record ID.');
+  return value;
+};
+const number = (value, label) => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) fail(`${label} must be a finite non-negative number.`);
+  return value;
+};
+const photoUrl = value => typeof value === 'string' && (/^https?:\/\/[^\s]+$/i.test(value) || /^\/uploads\/[\w.-]+$/.test(value));
+const strings = (value, label) => {
+  if (!Array.isArray(value) || value.length > 50 || value.some(v => typeof v !== 'string' || !v.trim() || v.length > 500)) fail(`Invalid ${label}.`);
+  return [...new Set(value.map(v => v.trim()))];
+};
+const fields = ['title', 'problemStatement', 'description', 'category', 'location', 'beneficiaries', 'requiredSkills', 'volunteersNeeded', 'materialsNeeded', 'fundingRequired', 'timeline', 'milestones', 'volunteerHours'];
+const owned = async (ngoId, projectId, session = null) => {
+  const project = await Project.findById(id(projectId)).session(session);
+  if (!project) fail('Project not found.', 404);
+  if (String(project.ngoId) !== String(ngoId)) fail('You do not own this project.', 403);
+  return project;
+};
+const verified = async (ngoId, session = null) => {
+  const profile = await NGOProfile.findOne({
+    userId: ngoId
+  }).session(session);
+  if (profile?.verificationStatus !== 'verified') fail('An administrator must verify your NGO before you can adopt or create projects.', 403);
+};
+const applyFields = (project, data) => {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) fail('Invalid project data.');
+  for (const key of fields) {
+    if (data[key] === undefined) continue;
+    if (['fundingRequired', 'volunteersNeeded', 'volunteerHours'].includes(key)) number(data[key], key);
+    if (key === 'volunteersNeeded' && !Number.isInteger(data[key])) fail('Volunteers needed must be a whole number.');
+    if (key === 'requiredSkills') strings(data[key], key);
+    if (key === 'beneficiaries') {
+      number(data[key]?.estimatedCount, 'Beneficiaries');
+      if (!Number.isInteger(data[key].estimatedCount)) fail('Beneficiaries must be a whole number.');
+    }
+    if (key === 'location' && data[key]?.coordinates !== undefined) {
+      const c = data[key].coordinates;
+      if (!Array.isArray(c) || c.length !== 2 || c.some(v => typeof v !== 'number' || !Number.isFinite(v)) || Math.abs(c[0]) > 180 || Math.abs(c[1]) > 90) fail('Invalid coordinates.');
+    }
+    if (key === 'materialsNeeded') {
+      if (!Array.isArray(data[key]) || data[key].length > 100) fail('Invalid materials.');
+      const previous = new Map((project.materialsNeeded || []).map(m => [String(m._id), m]));
+      for (const m of data[key]) {
+        number(m.quantityNeeded, 'Material quantity');
+        const old = previous.get(String(m._id));
+        if (m.quantityReceived !== undefined && m.quantityReceived !== (old?.quantityReceived || 0)) fail('Update received materials through resource tracking with a note.');
+      }
+      for (const old of previous.values()) if (old.quantityReceived > 0 && !data[key].some(m => String(m._id) === String(old._id))) fail('Cannot remove a material with received quantities.');
+      project[key] = data[key].map(m => ({
+        ...m,
+        quantityReceived: previous.get(String(m._id))?.quantityReceived || 0
+      }));
+      continue;
+    }
+    if (key === 'milestones' && (!Array.isArray(data[key]) || data[key].length > 100)) fail('Invalid milestones.');
+    project[key] = data[key];
   }
-
-  let profile = await NGOProfile.findOne({ userId });
-  if (!profile) {
-    profile = await NGOProfile.create({
-      userId,
-      ngoName: user.name,
-      registrationNumber: 'REG-PENDING'
+  if (project.timeline?.startDate && project.timeline?.expectedEndDate && project.timeline.startDate > project.timeline.expectedEndDate) fail('End date must not precede start date.');
+};
+export const getNgoProfile = async userId => {
+  const [user, profile] = await Promise.all([User.findById(userId), NGOProfile.findOne({
+    userId
+  })]);
+  if (!profile) fail('NGO profile not found.', 404);
+  return {
+    user,
+    profile
+  };
+};
+export const updateNgoProfile = async (userId, data) => {
+  const {
+    profile
+  } = await getNgoProfile(userId);
+  for (const key of ['ngoName', 'about', 'contactPersonName', 'contactPhone']) if (data[key] !== undefined) {
+    if (typeof data[key] !== 'string') fail(`Invalid ${key}.`);
+    profile[key] = data[key].trim();
+  }
+  for (const key of ['causeAreas', 'locationsServed', 'photos']) if (data[key] !== undefined) profile[key] = strings(data[key], key);
+  if (profile.photos.some(p => !photoUrl(p))) fail('Invalid photo URL.');
+  if (data.team !== undefined) {
+    if (!Array.isArray(data.team) || data.team.length > 50) fail('Invalid team.');
+    profile.team = data.team.map(m => {
+      if (!m || typeof m.name !== 'string' || typeof m.role !== 'string' || m.photoUrl && !photoUrl(m.photoUrl)) fail('Invalid team member.');
+      return {
+        name: m.name,
+        role: m.role,
+        photoUrl: m.photoUrl || ''
+      };
     });
   }
-
-  return { user, profile };
-};
-
-/**
- * Update NGO Profile details.
- * Note: verificationStatus CANNOT be updated by NGO (admin only).
- */
-export const updateNgoProfile = async (userId, updateData) => {
-  const {
-    ngoName,
-    about,
-    causeAreas,
-    locationsServed,
-    contactPersonName,
-    contactPhone,
-    team,
-    userLocation
-  } = updateData;
-
-  const profile = await NGOProfile.findOne({ userId });
-  if (!profile) {
-    const err = new Error('NGO profile not found.');
-    err.statusCode = 404;
-    throw err;
-  }
-
-  if (ngoName) profile.ngoName = String(ngoName).trim();
-  if (about !== undefined) profile.about = String(about).trim();
-  if (Array.isArray(causeAreas)) profile.causeAreas = causeAreas.filter(Boolean);
-  if (Array.isArray(locationsServed)) profile.locationsServed = locationsServed.filter(Boolean);
-  if (contactPersonName !== undefined) profile.contactPersonName = String(contactPersonName).trim();
-  if (contactPhone !== undefined) profile.contactPhone = String(contactPhone).trim();
-  if (Array.isArray(team)) {
-    profile.team = team.map((member) => ({
-      name: String(member.name || '').trim(),
-      role: String(member.role || '').trim(),
-      photoUrl: String(member.photoUrl || '').trim()
-    })).filter((m) => m.name && m.role);
-  }
-
   await profile.save();
-
-  // Update user name/location if provided
-  if (ngoName || userLocation) {
-    const userUpdates = {};
-    if (ngoName) userUpdates.name = String(ngoName).trim();
-    if (userLocation) userUpdates.location = userLocation;
-    await User.findByIdAndUpdate(userId, userUpdates);
-  }
-
-  const user = await User.findById(userId).select('-passwordHash');
-  return { user, profile };
+  return getNgoProfile(userId);
 };
-
-/**
- * List unadopted community problems ('reported' status).
- */
-export const getUnadoptedProblems = async (query = {}) => {
-  const {
-    location,
-    city,
-    category,
-    urgency,
-    search,
-    page = 1,
-    limit = 10,
-    sort = 'newest'
-  } = query;
-
-  const filter = {
-    status: 'reported',
-    adoptedByNgoId: null
-  };
-
-  const targetCity = city || location;
-  if (targetCity) {
-    filter['location.city'] = { $regex: String(targetCity).trim(), $options: 'i' };
-  }
-  if (category) filter.category = category;
-  if (urgency) filter.urgency = urgency;
-  if (search && String(search).trim()) {
-    filter.$or = [
-      { title: { $regex: String(search).trim(), $options: 'i' } },
-      { description: { $regex: String(search).trim(), $options: 'i' } }
-    ];
-  }
-
-  const parsedPage = Math.max(1, Number(page));
-  const parsedLimit = Math.min(50, Math.max(1, Number(limit)));
-  const skip = (parsedPage - 1) * parsedLimit;
-
-  const sortOrder = sort === 'most_urgent' ? { urgency: -1, createdAt: -1 } : { createdAt: -1 };
-
-  const [items, total] = await Promise.all([
-    Problem.find(filter)
-      .sort(sortOrder)
-      .skip(skip)
-      .limit(parsedLimit)
-      .populate('postedBy', 'name profilePhotoUrl')
-      .lean(),
-    Problem.countDocuments(filter)
-  ]);
-
-  return {
-    page: parsedPage,
-    limit: parsedLimit,
-    total,
-    totalPages: Math.ceil(total / parsedLimit),
-    items
-  };
-};
-
-/**
- * Adopt a problem atomically:
- * Creates a linked Project and updates Problem status to 'adopted'.
- */
-export const adoptProblem = async (ngoId, problemId, customData = {}) => {
-  return await runInTransaction(async (session) => {
-    const opts = session ? { session } : {};
-
-    const problem = await Problem.findById(problemId).session(session || null);
-    if (!problem) {
-      const err = new Error('Problem not found.');
-      err.statusCode = 404;
-      throw err;
-    }
-
-    if (problem.status !== 'reported' || problem.adoptedByNgoId) {
-      const err = new Error('This problem has already been adopted by an organization.');
-      err.statusCode = 409;
-      throw err;
-    }
-
-    // Prepare project data
-    const projectPayload = {
-      ngoId,
-      sourceProblemId: problem._id,
-      title: customData.title || problem.title,
-      problemStatement: customData.problemStatement || problem.description,
-      description: customData.description || problem.description,
-      category: customData.category || problem.category,
-      location: customData.location || problem.location,
-      beneficiaries: customData.beneficiaries || { estimatedCount: 0, description: '' },
-      requiredSkills: customData.requiredSkills || [],
-      volunteersNeeded: customData.volunteersNeeded || 0,
-      materialsNeeded: customData.materialsNeeded || [],
-      fundingRequired: customData.fundingRequired || 0,
-      fundingReceived: 0,
-      fundingSpent: 0,
-      timeline: customData.timeline || {},
-      milestones: customData.milestones || [],
-      status: 'adopted',
-      photos: {
-        before: problem.photos || [],
-        progress: [],
-        after: []
-      },
-      teamMembers: []
-    };
-
-    const [project] = await Project.create([projectPayload], opts);
-
-    // Update Problem
-    problem.status = 'adopted';
-    problem.adoptedByNgoId = ngoId;
-    problem.linkedProjectId = project._id;
-    await problem.save(opts);
-
-    return { project, problem };
-  });
-};
-
-/**
- * Create a direct project (without a source problem).
- */
-export const createDirectProject = async (ngoId, projectData) => {
-  const payload = {
-    ...projectData,
-    ngoId,
-    sourceProblemId: null,
-    status: projectData.status || 'adopted',
-    fundingReceived: 0,
-    fundingSpent: 0,
-    teamMembers: []
-  };
-
-  const project = await Project.create(payload);
-  return project;
-};
-
-/**
- * List projects owned by this NGO.
- */
-export const getNgoProjects = async (ngoId, query = {}) => {
-  const filter = { ngoId };
-  if (query.status) {
-    filter.status = query.status;
-  }
-  if (query.category) {
-    filter.category = query.category;
-  }
-
-  const projects = await Project.find(filter)
-    .sort({ createdAt: -1 })
-    .populate('sourceProblemId', 'title photos')
-    .lean();
-
-  return projects;
-};
-
-/**
- * Get single project detail, enforcing NGO ownership.
- */
-export const getProjectById = async (ngoId, projectId) => {
-  const project = await Project.findById(projectId)
-    .populate('sourceProblemId')
-    .populate('teamMembers', 'name email profilePhotoUrl location')
-    .lean();
-
-  if (!project) {
-    const err = new Error('Project not found.');
-    err.statusCode = 404;
-    throw err;
-  }
-
-  if (project.ngoId.toString() !== ngoId.toString()) {
-    const err = new Error('Access denied. You do not have permission to view this project.');
-    err.statusCode = 403;
-    throw err;
-  }
-
-  return project;
-};
-
-/**
- * Update project details.
- */
-export const updateProject = async (ngoId, projectId, updateData) => {
-  const project = await Project.findById(projectId);
-  if (!project) {
-    const err = new Error('Project not found.');
-    err.statusCode = 404;
-    throw err;
-  }
-
-  if (project.ngoId.toString() !== ngoId.toString()) {
-    const err = new Error('Access denied. You do not have permission to modify this project.');
-    err.statusCode = 403;
-    throw err;
-  }
-
-  const allowedFields = [
-    'title',
-    'problemStatement',
-    'description',
-    'category',
-    'location',
-    'beneficiaries',
-    'requiredSkills',
-    'volunteersNeeded',
-    'materialsNeeded',
-    'fundingRequired',
-    'timeline',
-    'milestones'
-  ];
-
-  for (const field of allowedFields) {
-    if (updateData[field] !== undefined) {
-      project[field] = updateData[field];
-    }
-  }
-
-  await project.save();
-  return project;
-};
-
-/**
- * Move project through sequential status pipeline.
- * Validates sequential order and prevents invalid jumps.
- */
-export const updateProjectStatus = async (ngoId, projectId, newStatus) => {
-  const project = await Project.findById(projectId);
-  if (!project) {
-    const err = new Error('Project not found.');
-    err.statusCode = 404;
-    throw err;
-  }
-
-  if (project.ngoId.toString() !== ngoId.toString()) {
-    const err = new Error('Access denied. You do not own this project.');
-    err.statusCode = 403;
-    throw err;
-  }
-
-  const currentIndex = STATUS_PIPELINE.indexOf(project.status);
-  const targetIndex = STATUS_PIPELINE.indexOf(newStatus);
-
-  if (targetIndex === -1) {
-    const err = new Error(`'${newStatus}' is not a valid project status.`);
-    err.statusCode = 400;
-    throw err;
-  }
-
-  // Enforce sequential pipeline progression: can advance by 1 step or stay same
-  // Cannot jump steps (e.g. adopted -> completed) and cannot jump backward
-  if (targetIndex !== currentIndex && targetIndex !== currentIndex + 1) {
-    const err = new Error(
-      `Invalid status transition from '${project.status}' to '${newStatus}'. Status must follow pipeline: ${STATUS_PIPELINE.slice(1).join(' -> ')}`
-    );
-    err.statusCode = 400;
-    throw err;
-  }
-
-  // If transitioning to completed, delegate to completion validation
-  if (newStatus === 'completed') {
-    return await completeProject(ngoId, projectId);
-  }
-
-  project.status = newStatus;
-  await project.save();
-
-  // Sync linked problem status if exists
-  if (project.sourceProblemId) {
-    await Problem.findByIdAndUpdate(project.sourceProblemId, { status: newStatus });
-  }
-
-  return project;
-};
-
-/**
- * Get volunteer applicants for a project (from linked Problem or Project).
- */
-export const getProjectApplicants = async (ngoId, projectId) => {
-  const project = await Project.findById(projectId);
-  if (!project) {
-    const err = new Error('Project not found.');
-    err.statusCode = 404;
-    throw err;
-  }
-
-  if (project.ngoId.toString() !== ngoId.toString()) {
-    const err = new Error('Access denied. You do not own this project.');
-    err.statusCode = 403;
-    throw err;
-  }
-
-  // Find applications linked to project OR linked to sourceProblem
-  const filter = {
-    $or: [{ projectId: project._id }]
-  };
-  if (project.sourceProblemId) {
-    filter.$or.push({ problemId: project.sourceProblemId });
-  }
-
-  const applications = await Application.find(filter)
-    .populate('userId', 'name email profilePhotoUrl location phone')
-    .sort({ createdAt: -1 })
-    .lean();
-
-  // Augment each applicant with their CommunityUserProfile
-  const userIds = applications.map((a) => a.userId?._id).filter(Boolean);
-  const profiles = await CommunityUserProfile.find({ userId: { $in: userIds } }).lean();
-  const profileMap = new Map(profiles.map((p) => [p.userId.toString(), p]));
-
-  const enrichedApplicants = applications.map((app) => ({
-    ...app,
-    userProfile: app.userId?._id ? profileMap.get(app.userId._id.toString()) || null : null
-  }));
-
-  return enrichedApplicants;
-};
-
-/**
- * Accept or reject a volunteer application.
- * On acceptance, adds applicant's user ID to project.teamMembers.
- */
-export const reviewApplication = async (ngoId, applicationId, newStatus) => {
-  if (!['accepted', 'rejected'].includes(newStatus)) {
-    const err = new Error('Status must be either "accepted" or "rejected".');
-    err.statusCode = 400;
-    throw err;
-  }
-
-  const application = await Application.findById(applicationId);
-  if (!application) {
-    const err = new Error('Application not found.');
-    err.statusCode = 404;
-    throw err;
-  }
-
-  // Find the project this application belongs to
-  let project = null;
-  if (application.projectId) {
-    project = await Project.findById(application.projectId);
-  } else if (application.problemId) {
-    project = await Project.findOne({ sourceProblemId: application.problemId });
-  }
-
-  if (!project) {
-    const err = new Error('Associated project not found for this application.');
-    err.statusCode = 404;
-    throw err;
-  }
-
-  if (project.ngoId.toString() !== ngoId.toString()) {
-    const err = new Error('Access denied. You do not own the project for this application.');
-    err.statusCode = 403;
-    throw err;
-  }
-
-  application.status = newStatus;
-  await application.save();
-
-  // If accepted, add to teamMembers if not already present
-  if (newStatus === 'accepted') {
-    const memberIdStr = application.userId.toString();
-    const alreadyMember = (project.teamMembers || []).some((m) => m.toString() === memberIdStr);
-    if (!alreadyMember) {
-      project.teamMembers.push(application.userId);
-      await project.save();
-    }
-  }
-
-  return { application, project };
-};
-
-/**
- * Update project resource tracking: materials received & funding spent.
- */
-export const updateProjectResources = async (ngoId, projectId, resourceData) => {
-  const { materials, fundingSpent, receiptNote } = resourceData;
-
-  const project = await Project.findById(projectId);
-  if (!project) {
-    const err = new Error('Project not found.');
-    err.statusCode = 404;
-    throw err;
-  }
-
-  if (project.ngoId.toString() !== ngoId.toString()) {
-    const err = new Error('Access denied. You do not own this project.');
-    err.statusCode = 403;
-    throw err;
-  }
-
-  if (fundingSpent !== undefined) {
-    const parsedSpent = Number(fundingSpent);
-    if (isNaN(parsedSpent) || parsedSpent < 0) {
-      const err = new Error('Funding spent must be a non-negative number.');
-      err.statusCode = 400;
-      throw err;
-    }
-    project.fundingSpent = parsedSpent;
-  }
-
-  if (Array.isArray(materials)) {
-    for (const update of materials) {
-      const target = project.materialsNeeded.id(update._id);
-      if (target && update.quantityReceived !== undefined) {
-        target.quantityReceived = Math.max(0, Number(update.quantityReceived));
-      }
-    }
-  }
-
-  await project.save();
-  return project;
-};
-
-/**
- * Upload photos for a project (before / progress / after).
- */
-export const uploadProjectPhotos = async (ngoId, projectId, category, urls) => {
-  if (!['before', 'progress', 'after'].includes(category)) {
-    const err = new Error('Photo category must be "before", "progress", or "after".');
-    err.statusCode = 400;
-    throw err;
-  }
-
-  const project = await Project.findById(projectId);
-  if (!project) {
-    const err = new Error('Project not found.');
-    err.statusCode = 404;
-    throw err;
-  }
-
-  if (project.ngoId.toString() !== ngoId.toString()) {
-    const err = new Error('Access denied. You do not own this project.');
-    err.statusCode = 403;
-    throw err;
-  }
-
-  if (!project.photos) {
-    project.photos = { before: [], progress: [], after: [] };
-  }
-
-  project.photos[category].push(...urls);
-  await project.save();
-  return project;
-};
-
-/**
- * Mark a project completed.
- * Gated: Requires at least 1 "after" photo and beneficiaries.estimatedCount > 0.
- * Automatically triggers recalculateNgoStats.
- */
-export const completeProject = async (ngoId, projectId) => {
-  const project = await Project.findById(projectId);
-  if (!project) {
-    const err = new Error('Project not found.');
-    err.statusCode = 404;
-    throw err;
-  }
-
-  if (project.ngoId.toString() !== ngoId.toString()) {
-    const err = new Error('Access denied. You do not own this project.');
-    err.statusCode = 403;
-    throw err;
-  }
-
-  // Completion criteria checks
-  const hasAfterPhoto = Array.isArray(project.photos?.after) && project.photos.after.length > 0;
-  const hasBeneficiaries = Number(project.beneficiaries?.estimatedCount) > 0;
-
-  if (!hasAfterPhoto) {
-    const err = new Error('Cannot complete project: At least one "after" impact photo is required.');
-    err.statusCode = 400;
-    throw err;
-  }
-
-  if (!hasBeneficiaries) {
-    const err = new Error('Cannot complete project: Estimated beneficiaries count must be greater than 0.');
-    err.statusCode = 400;
-    throw err;
-  }
-
-  project.status = 'completed';
-  await project.save();
-
-  // Sync linked problem status
-  if (project.sourceProblemId) {
-    await Problem.findByIdAndUpdate(project.sourceProblemId, { status: 'completed' });
-  }
-
-  // Recalculate NGO impact stats
-  await recalculateNgoStats(ngoId);
-
-  return project;
-};
-
-/**
- * Recalculate aggregated impact metrics for an NGO across all completed projects.
- */
-export const recalculateNgoStats = async (ngoId) => {
-  const completedProjects = await Project.find({
-    ngoId,
-    status: 'completed'
-  }).lean();
-
-  const previousProjectsCount = completedProjects.length;
-  const totalBeneficiariesReached = completedProjects.reduce(
-    (sum, p) => sum + (Number(p.beneficiaries?.estimatedCount) || 0),
-    0
-  );
-
-  // Volunteer hours estimated from teamMembers (avg 12 hours per volunteer per completed project)
-  const totalVolunteerHours = completedProjects.reduce(
-    (sum, p) => sum + ((p.teamMembers?.length || 0) * 12),
-    0
-  );
-
-  const updatedProfile = await NGOProfile.findOneAndUpdate(
-    { userId: ngoId },
-    {
-      previousProjectsCount,
-      totalBeneficiariesReached,
-      totalVolunteerHours
-    },
-    { new: true }
-  );
-
-  return updatedProfile;
-};
-
-/**
- * Dashboard summary metrics aggregation.
- */
-export const getDashboardSummary = async (ngoId, userCity = '') => {
-  const [
-    activeProjectsCount,
-    projectsNeedingFundingCount,
-    completedProjectsCount,
-    allNgoProjects,
-    profile
-  ] = await Promise.all([
-    Project.countDocuments({
-      ngoId,
-      status: { $in: ['adopted', 'team_forming', 'funding_needed', 'in_progress'] }
-    }),
-    Project.countDocuments({
-      ngoId,
-      status: 'funding_needed'
-    }),
-    Project.countDocuments({
-      ngoId,
-      status: 'completed'
-    }),
-    Project.find({ ngoId }).select('_id sourceProblemId').lean(),
-    NGOProfile.findOne({ userId: ngoId }).lean()
-  ]);
-
-  // Nearby unadopted problems count
-  const cityFilter = userCity ? { 'location.city': { $regex: String(userCity).trim(), $options: 'i' } } : {};
-  const newNearbyProblemsCount = await Problem.countDocuments({
+export const getUnadoptedProblems = query => discoverProblems(query, true);
+export const adoptProblem = (ngoId, problemId, data = {}) => strictTransaction(async session => {
+  await verified(ngoId, session);
+  const problem = await Problem.findOneAndUpdate({
+    _id: id(problemId),
     status: 'reported',
     adoptedByNgoId: null,
-    ...cityFilter
+    linkedProjectId: null
+  }, {
+    $set: {
+      adoptedByNgoId: ngoId,
+      status: 'adopted'
+    }
+  }, {
+    new: true,
+    session
   });
-
-  // Pending applications for this NGO's projects or linked problems
-  const projectIds = allNgoProjects.map((p) => p._id);
-  const sourceProblemIds = allNgoProjects.map((p) => p.sourceProblemId).filter(Boolean);
-
-  const pendingApplicationsCount = await Application.countDocuments({
-    status: 'pending',
-    $or: [
-      { projectId: { $in: projectIds } },
-      { problemId: { $in: sourceProblemIds } }
-    ]
+  if (!problem) {
+    if (!(await Problem.exists({
+      _id: problemId
+    }).session(session))) fail('Problem not found.', 404);
+    fail('This problem has already been adopted.', 409);
+  }
+  const project = new Project({
+    ngoId,
+    sourceProblemId: problem._id,
+    title: problem.title,
+    problemStatement: problem.description,
+    description: problem.description,
+    category: problem.category,
+    location: problem.location,
+    photos: {
+      before: problem.photos
+    },
+    status: 'adopted'
   });
-
+  applyFields(project, data);
+  await project.save({
+    session
+  });
+  problem.linkedProjectId = project._id;
+  await problem.save({
+    session
+  });
   return {
-    activeProjectsCount,
+    project,
+    problem
+  };
+});
+export const createDirectProject = async (ngoId, data) => {
+  await verified(ngoId);
+  if (data.status && data.status !== 'adopted') fail('New projects begin at adopted.');
+  const project = new Project({
+    ngoId,
+    sourceProblemId: null,
+    status: 'adopted'
+  });
+  applyFields(project, data);
+  await project.save();
+  return project;
+};
+const applicationFilter = project => ({
+  $or: [{
+    projectId: project._id
+  }, ...(project.sourceProblemId ? [{
+    problemId: project.sourceProblemId._id || project.sourceProblemId
+  }] : [])]
+});
+export const getNgoProjects = async (ngoId, query = {}) => {
+  if (query.status && !PROBLEM_STATUSES.includes(query.status)) fail('Invalid status.');
+  const projects = await Project.find({
+    ngoId,
+    ...(query.status ? {
+      status: query.status
+    } : {})
+  }).sort({
+    createdAt: -1
+  }).lean();
+  const apps = await Application.find({
+    $or: [{
+      projectId: {
+        $in: projects.map(p => p._id)
+      }
+    }, {
+      problemId: {
+        $in: projects.map(p => p.sourceProblemId).filter(Boolean)
+      }
+    }]
+  }).select('projectId problemId').lean();
+  return projects.map(p => ({
+    ...p,
+    applicantsCount: apps.filter(a => String(a.projectId) === String(p._id) || p.sourceProblemId && String(a.problemId) === String(p.sourceProblemId)).length
+  }));
+};
+export const getProjectById = async (ngoId, projectId) => {
+  const project = await owned(ngoId, projectId);
+  await project.populate([{
+    path: 'sourceProblemId',
+    select: '-location.coordinates'
+  }, {
+    path: 'teamMembers',
+    select: 'name email profilePhotoUrl location.city'
+  }]);
+  return project;
+};
+export const recalculateNgoStats = async (ngoId, session = null) => {
+  const [stats] = await Project.aggregate([{
+    $match: {
+      ngoId: new mongoose.Types.ObjectId(String(ngoId)),
+      status: 'completed'
+    }
+  }, {
+    $group: {
+      _id: null,
+      previousProjectsCount: {
+        $sum: 1
+      },
+      totalBeneficiariesReached: {
+        $sum: '$beneficiaries.estimatedCount'
+      },
+      totalVolunteerHours: {
+        $sum: '$volunteerHours'
+      }
+    }
+  }]).session(session);
+  const totals = stats || {
+    previousProjectsCount: 0,
+    totalBeneficiariesReached: 0,
+    totalVolunteerHours: 0
+  };
+  delete totals._id;
+  await NGOProfile.updateOne({
+    userId: ngoId
+  }, {
+    $set: totals
+  }, {
+    session
+  });
+  return totals;
+};
+const transition = (project, status) => {
+  const current = PROBLEM_STATUSES.indexOf(project.status),
+    next = PROBLEM_STATUSES.indexOf(status);
+  if (next < 0 || next !== current && next !== current + 1) fail('Status must advance one step in the project pipeline.');
+  if (status === 'completed' && (!project.photos?.after?.length || !(project.beneficiaries?.estimatedCount > 0))) fail('Completion requires an after photo and a positive beneficiary count.');
+  project.status = status;
+};
+export const updateProject = (ngoId, projectId, data) => strictTransaction(async session => {
+  const project = await owned(ngoId, projectId, session);
+  applyFields(project, data);
+  if (data.status !== undefined) transition(project, data.status);
+  if (project.status === 'completed') transition(project, 'completed');
+  await project.save({
+    session
+  });
+  if (project.sourceProblemId) await Problem.updateOne({
+    _id: project.sourceProblemId,
+    linkedProjectId: project._id
+  }, {
+    $set: {
+      status: project.status
+    }
+  }, {
+    session
+  });
+  // Serialize recalculation for simultaneous completions through this profile write.
+  if (project.status === 'completed') {
+    await NGOProfile.updateOne({
+      userId: ngoId
+    }, {
+      $inc: {
+        __v: 1
+      }
+    }, {
+      session
+    });
+    await recalculateNgoStats(ngoId, session);
+  }
+  return project;
+});
+export const updateProjectStatus = (ngoId, projectId, status) => updateProject(ngoId, projectId, {
+  status
+});
+export const completeProject = (ngoId, projectId) => updateProjectStatus(ngoId, projectId, 'completed');
+const enrich = async apps => {
+  const profiles = await CommunityUserProfile.find({
+    userId: {
+      $in: apps.map(a => a.userId?._id).filter(Boolean)
+    }
+  }).select('userId skills subType availability').lean();
+  return apps.map(a => ({
+    ...a,
+    userProfile: profiles.find(p => String(p.userId) === String(a.userId?._id)) || null
+  }));
+};
+export const getProjectApplicants = async (ngoId, projectId) => {
+  const project = await owned(ngoId, projectId);
+  return enrich(await Application.find(applicationFilter(project)).populate('userId', 'name email profilePhotoUrl location.city').sort({
+    createdAt: -1
+  }).lean());
+};
+export const reviewApplication = (ngoId, applicationId, status, expectedProjectId) => strictTransaction(async session => {
+  if (!['accepted', 'rejected'].includes(status)) fail('Choose accepted or rejected.');
+  const application = await Application.findById(id(applicationId)).session(session);
+  if (!application) fail('Application not found.', 404);
+  const project = application.projectId ? await owned(ngoId, application.projectId, session) : await Project.findOne({
+    sourceProblemId: application.problemId
+  }).session(session);
+  if (!project) fail('Associated project not found.', 404);
+  if (String(project.ngoId) !== String(ngoId) || expectedProjectId && String(project._id) !== expectedProjectId) fail('You do not own this application.', 403);
+  if (application.status !== 'pending' && application.status !== status) fail('This application has already been reviewed.', 409);
+  if (project.status === 'completed' && application.status !== status) fail('This project is completed.', 409);
+  application.status = status;
+  await application.save({
+    session
+  });
+  if (status === 'accepted') await Project.updateOne({
+    _id: project._id
+  }, {
+    $addToSet: {
+      teamMembers: application.userId
+    }
+  }, {
+    session
+  });
+  return {
+    application,
+    project: await Project.findById(project._id).session(session)
+  };
+});
+export const updateProjectResources = (ngoId, projectId, data) => strictTransaction(async session => {
+  const project = await owned(ngoId, projectId, session);
+  if (typeof data.receiptNote !== 'string' || !data.receiptNote.trim() || data.receiptNote.length > 2000) fail('A note or receipt reference is required.');
+  if (data.fundingSpent !== undefined) project.fundingSpent = number(data.fundingSpent, 'Funding spent');
+  if (data.materials !== undefined && !Array.isArray(data.materials)) fail('Invalid materials.');
+  for (const m of data.materials || []) {
+    const material = project.materialsNeeded.id(id(m._id));
+    if (!material) fail('Unknown material.');
+    material.quantityReceived = number(m.quantityReceived, 'Received quantity');
+  }
+  project.resourceUpdates.push({
+    note: data.receiptNote.trim(),
+    fundingSpent: project.fundingSpent,
+    materials: project.materialsNeeded.map(m => ({
+      materialId: String(m._id),
+      quantityReceived: m.quantityReceived
+    }))
+  });
+  await project.save({
+    session
+  });
+  return project;
+});
+export const uploadProjectPhotos = async (ngoId, projectId, category, urls) => {
+  await owned(ngoId, projectId);
+  if (!['before', 'progress', 'after'].includes(category) || !Array.isArray(urls) || !urls.length || urls.some(p => !photoUrl(p))) fail('Choose a gallery and valid image URLs.');
+  return Project.findOneAndUpdate({
+    _id: projectId,
+    ngoId
+  }, {
+    $push: {
+      [`photos.${category}`]: {
+        $each: urls
+      }
+    }
+  }, {
+    new: true,
+    runValidators: true
+  });
+};
+export const getDashboardSummary = async (ngoId, userCity = '') => {
+  const profile = await NGOProfile.findOne({
+    userId: ngoId
+  }).lean();
+  const locations = userCity ? [userCity] : profile?.locationsServed || [];
+  const nearbyFilter = {
+    status: 'reported',
+    adoptedByNgoId: null,
+    linkedProjectId: null,
+    ...(locations.length ? {
+      'location.city': {
+        $in: locations.map(city => new RegExp(`^${literal(city)}$`, 'i'))
+      }
+    } : {})
+  };
+  const [counts] = await Project.aggregate([{
+    $match: {
+      ngoId: new mongoose.Types.ObjectId(String(ngoId))
+    }
+  }, {
+    $lookup: {
+      from: 'applications',
+      let: {
+        project: '$_id',
+        problem: '$sourceProblemId'
+      },
+      pipeline: [{
+        $match: {
+          status: 'pending',
+          $expr: {
+            $or: [{
+              $eq: ['$projectId', '$$project']
+            }, {
+              $and: [{
+                $ne: ['$$problem', null]
+              }, {
+                $eq: ['$problemId', '$$problem']
+              }]
+            }]
+          }
+        }
+      }],
+      as: 'pending'
+    }
+  }, {
+    $group: {
+      _id: null,
+      activeProjectsCount: {
+        $sum: {
+          $cond: [{
+            $ne: ['$status', 'completed']
+          }, 1, 0]
+        }
+      },
+      completedProjectsCount: {
+        $sum: {
+          $cond: [{
+            $eq: ['$status', 'completed']
+          }, 1, 0]
+        }
+      },
+      projectsNeedingFundingCount: {
+        $sum: {
+          $cond: [{
+            $and: [{
+              $ne: ['$status', 'completed']
+            }, {
+              $gt: ['$fundingRequired', '$fundingReceived']
+            }]
+          }, 1, 0]
+        }
+      },
+      pendingApplicationsCount: {
+        $sum: {
+          $size: '$pending'
+        }
+      }
+    }
+  }]);
+  const [nearbyProblems, newNearbyProblemsCount, projects] = await Promise.all([Problem.find(nearbyFilter).select('-location.coordinates').sort({
+    createdAt: -1
+  }).limit(6).lean(), Problem.countDocuments(nearbyFilter), getNgoProjects(ngoId)]);
+  const pending = await Application.find({
+    status: 'pending',
+    $or: [{
+      projectId: {
+        $in: projects.map(p => p._id)
+      }
+    }, {
+      problemId: {
+        $in: projects.map(p => p.sourceProblemId).filter(Boolean)
+      }
+    }]
+  }).populate('userId', 'name email profilePhotoUrl location.city').sort({
+    createdAt: -1
+  }).limit(8).lean();
+  return {
+    activeProjectsCount: 0,
+    completedProjectsCount: 0,
+    projectsNeedingFundingCount: 0,
+    pendingApplicationsCount: 0,
+    ...counts,
     newNearbyProblemsCount,
-    pendingApplicationsCount,
-    projectsNeedingFundingCount,
-    completedProjectsCount,
+    nearbyProblems,
+    nearbyScope: locations.length ? locations.join(', ') : 'All locations (add locations in your profile)',
+    activeProjects: projects.filter(p => p.status !== 'completed').slice(0, 6),
+    pendingApplications: await enrich(pending),
     impactStats: {
       previousProjectsCount: profile?.previousProjectsCount || 0,
       totalBeneficiariesReached: profile?.totalBeneficiariesReached || 0,

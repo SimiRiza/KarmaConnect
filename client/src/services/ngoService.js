@@ -1,13 +1,13 @@
 import api from './api';
 
 // ── NGO Profile ──────────────────────────────────────────────
-export const getDashboard = () => api.get('/ngo/dashboard');
-export const getProfile = () => api.get('/ngo/profile');
-export const updateProfile = (payload) => api.put('/ngo/profile', payload);
+export const getDashboard = () => api.get('/ngo/dashboard-summary');
+export const getProfile = () => api.get('/ngo/me/profile');
+export const updateProfile = (payload) => api.put('/ngo/me/profile', payload);
 
 // ── Discover Problems ────────────────────────────────────────
 export const getUnadoptedProblems = (params = {}) =>
-  api.get('/ngo/discover-problems', { params });
+  api.get('/ngo/problems', { params });
 
 // ── Adopt Problem ────────────────────────────────────────────
 export const adoptProblem = (problemId, payload) =>
@@ -20,14 +20,14 @@ export const getProjectById = (id) => api.get(`/ngo/projects/${id}`);
 export const updateProject = (id, payload) => api.put(`/ngo/projects/${id}`, payload);
 export const updateProjectStatus = (id, status) =>
   api.patch(`/ngo/projects/${id}/status`, { status });
-export const completeProject = (id) => api.post(`/ngo/projects/${id}/complete`);
+export const completeProject = (id) => api.patch(`/ngo/projects/${id}/complete`);
 export const updateProjectResources = (id, payload) =>
-  api.put(`/ngo/projects/${id}/resources`, payload);
+  api.patch(`/ngo/projects/${id}/resources`, payload);
 export const uploadProjectPhotos = (id, payload) =>
-  api.post(`/ngo/projects/${id}/photos`, payload);
+  api.post(`/ngo/projects/${id}/photos`, payload, payload instanceof FormData ? { headers: { 'Content-Type': undefined } } : undefined);
 
 // ── Applicants ───────────────────────────────────────────────
 export const getApplicants = (projectId) =>
   api.get(`/ngo/projects/${projectId}/applicants`);
 export const reviewApplicant = (projectId, appId, status) =>
-  api.patch(`/ngo/projects/${projectId}/applicants/${appId}`, { status });
+  api.patch(`/ngo/applications/${appId}`, { status });

@@ -5,10 +5,11 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import mongoSanitize from 'express-mongo-sanitize';
 import dotenv from 'dotenv';
-import { connectDB } from './config/db.js';
+import { connectDB, disconnectDB } from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import problemRoutes from './routes/problemRoutes.js';
+import { prepareNgoIndexes } from './utils/ngoIndexes.js';
 import ngoRoutes from './routes/ngoRoutes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
@@ -91,12 +92,13 @@ app.use(errorHandler);
 
 // 9. Start Server only when executed directly
 if (process.env.NODE_ENV !== 'test' && !process.env.NODE_TEST_CONTEXT) {
-  connectDB().then(() => {
+  connectDB().then(async () => {
+    await prepareNgoIndexes();
     app.listen(PORT, () => {
       console.log(`🚀 KarmaConnect Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
       console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
     });
-  });
+  }).catch(async error => { console.error('Database initialization failed:', error.message); await disconnectDB(); process.exitCode = 1; });
 }
 
 export default app;

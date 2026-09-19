@@ -1,3 +1,4 @@
+import { removeUploads } from '../middleware/upload.js';
 import * as ngoService from '../services/ngoService.js';
 
 export const getProfile = async (req, res, next) => {
@@ -129,7 +130,7 @@ export const getApplicants = async (req, res, next) => {
 export const reviewApplicant = async (req, res, next) => {
   try {
     const { status } = req.body;
-    const result = await ngoService.reviewApplication(req.user.id, req.params.id, status);
+    const result = await ngoService.reviewApplication(req.user.id, req.params.appId || req.params.id, status, req.params.appId ? req.params.id : undefined);
     res.status(200).json({
       success: true,
       message: `Application marked as ${status}.`,
@@ -164,19 +165,17 @@ export const uploadPhotos = async (req, res, next) => {
     }
 
     if (!category || urls.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Category and at least one image photo is required.'
-      });
+      throw Object.assign(new Error('Category and at least one photo are required.'), { statusCode: 400 });
     }
 
     const project = await ngoService.uploadProjectPhotos(req.user.id, req.params.id, category, urls);
     res.status(200).json({
       success: true,
       message: 'Photos uploaded successfully.',
-      photos: project.photos
+      project, photos: project.photos
     });
   } catch (error) {
+    await removeUploads(req.files);
     next(error);
   }
 };

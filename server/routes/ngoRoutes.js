@@ -1,26 +1,28 @@
 import express from 'express';
+import { upload } from '../middleware/upload.js';
+import { getProjectById } from '../services/ngoService.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import * as ctrl from '../controllers/ngoController.js';
 
 const router = express.Router();
 
-// All NGO routes require authentication + ngo or admin role
+// All NGO routes require authentication and the NGO role only.
 router.use(authenticate);
-router.use(authorize('ngo', 'admin'));
+router.use(authorize('ngo'));
 
 // ── Dashboard Summary ────────────────────────────────────────
 // GET /api/ngo/dashboard
-router.get('/dashboard', ctrl.getDashboardSummary);
+router.get(['/dashboard-summary', '/dashboard'], ctrl.getDashboardSummary);
 
 // ── NGO Profile ──────────────────────────────────────────────
 // GET  /api/ngo/profile
 // PUT  /api/ngo/profile
-router.get('/profile', ctrl.getProfile);
-router.put('/profile', ctrl.updateProfile);
+router.get(['/me/profile', '/profile'], ctrl.getProfile);
+router.put(['/me/profile', '/profile'], ctrl.updateProfile);
 
 // ── Discover Community Problems ──────────────────────────────
 // GET /api/ngo/discover-problems?category=&city=&urgency=&search=&page=
-router.get('/discover-problems', ctrl.getUnadoptedProblems);
+router.get(['/problems', '/discover-problems'], ctrl.getUnadoptedProblems);
 
 // ── Adopt a Community Problem → creates Project ──────────────
 // POST /api/ngo/problems/:id/adopt
@@ -43,19 +45,22 @@ router.patch('/projects/:id/status', ctrl.updateProjectStatus);
 // ── Project Completion ───────────────────────────────────────
 // POST /api/ngo/projects/:id/complete
 router.post('/projects/:id/complete', ctrl.completeProject);
+router.patch('/projects/:id/complete', ctrl.completeProject);
 
 // ── Project Resources (materials, funding) ───────────────────
 // PUT /api/ngo/projects/:id/resources
 router.put('/projects/:id/resources', ctrl.updateResources);
+router.patch('/projects/:id/resources', ctrl.updateResources);
 
 // ── Project Photos ───────────────────────────────────────────
 // POST /api/ngo/projects/:id/photos  { category: "before"|"progress"|"after", urls: [] }
-router.post('/projects/:id/photos', ctrl.uploadPhotos);
+router.post('/projects/:id/photos', async (req, res, next) => { try { await getProjectById(req.user.id, req.params.id); next(); } catch (error) { next(error); } }, upload.array('photos', 6), ctrl.uploadPhotos);
 
 // ── Volunteer Applications for a Project ────────────────────
 // GET   /api/ngo/projects/:id/applicants
 // PATCH /api/ngo/projects/:id/applicants/:appId  { status: "accepted"|"rejected" }
 router.get('/projects/:id/applicants', ctrl.getApplicants);
 router.patch('/projects/:id/applicants/:appId', ctrl.reviewApplicant);
+router.patch('/applications/:id', ctrl.reviewApplicant);
 
 export default router;
