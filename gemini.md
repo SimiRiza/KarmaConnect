@@ -49,7 +49,7 @@ exactly where the build stands.)
 - [x] Prompt 2 — Community User/Volunteer Dashboard
 - [x] Prompt 3 — NGO Dashboard
 - [x] Prompt 4 — CSR Manager Dashboard
-- [ ] Prompt 5 — Matching + Team Formation
+- [x] Prompt 5 — Matching + Team Formation
 - [ ] Prompt 6 — Contributions + Impact Tracking
 - [ ] Prompt 7 — Verification + Trust + Notifications
 - [ ] Prompt 8 — Final UI + Admin + Polish
@@ -57,7 +57,7 @@ exactly where the build stands.)
 ## Known decisions already made (don't re-litigate these without reason)
 - Signup uses the existing transaction helper, including its pre-existing
   standalone fallback. Prompt 3 NGO operations use strict transactions instead.
-- Project and Problem are expanded through Prompt 3. Team, Contribution,
+- Project and Problem are expanded through Prompt 3. Contribution,
   ImpactRecord and Notification retain their existing future-prompt extension points.
 - Prompt 2 adds the minimal Community User problem flow: Problem stores title,
   description, category, photos, location.city/area, urgency, status, and
@@ -198,3 +198,91 @@ exactly where the build stands.)
   layout and all CSR route guards. The existing NGO/community browser suite also
   passed, explicitly retesting NGO create/adopt and community signup/login/post/apply.
   Desktop/mobile screenshots are in artifacts/csr-browser/.
+
+
+### Prompt 5 decisions and verification
+- Matching is now scored by pure volunteerMatching.js and csrMatching.js functions.
+  API orchestration lives in recommendationService.js; each result includes matchScore,
+  matchBreakdown and matchReasons. Scores are points, never percentages. Normalize case,
+  whitespace and existing signup category labels; duplicate inputs cannot multiply points.
+  Ties sort by creation time descending then ID. Score the complete eligible set before
+  pagination (default 10, limit capped at 50).
+- Volunteer scoring: skill overlap * 3 + interest overlap * 2 + same city 2 +
+  availability fit 1 + cause-area overlap * 2. Problems have no structured skills, so
+  they receive no inferred skill bonus. Adopted Problems appear once as Projects;
+  unfinished unlinked Problems and unfinished Projects remain eligible.
+- Availability is a documented heuristic: flexible needs recorded urgency or a valid
+  timeline; weekdays/weekends need a matching day within the recorded start/end dates
+  using UTC calendar days. Missing/unknown evidence earns zero. No date is guessed.
+- CSR scoring: focus overlap * 3 + shared city/state 2 + budget fit 2 (within range)
+  or 1 (positive requirement below range or at most 20% above maximum) + verified NGO 1
+  + independently 0.5 for more than three previous projects. Compare fundingRequired,
+  not funding gap. Only explicit INR ranges are parsed; legacy dollars earn no budget
+  points and are never converted. Projects currently record city/area, not state;
+  matching uses only recorded city/state data, never area-as-state or NGO address.
+- CSR match-projects preserves its request/response envelope. Focus/location/budget
+  are scoring preferences, so partial matches remain visible. Explicit category,
+  fundingMin/fundingMax, timeline, beneficiary, urgency and verification constraints
+  remain discovery filters. Default CSR candidates are unfinished projects with a
+  funding gap; includeFullyFunded may broaden this but recommendations omit completed
+  projects. Ordinary GET project discovery keeps its prior filter semantics.
+- GET /api/users/me/recommended-projects and /skill-matches are community-only;
+  GET /api/csr/me/recommended-projects is CSR-only. Both dashboards call their new
+  recommendation endpoints. Cards show explanations derived from earned points.
+- Project.skillRequests stores skillNeeded, positive hoursNeeded, description,
+  open/filled status and createdAt. Only the owner NGO may post requests on unfinished
+  projects. Skill matches use case-insensitive partial profile-skill matching and
+  exclude filled requests/completed projects. Push notifications remain Prompt 7.
+- Team retains legacy name/status and adds unique projectId, members, tasks, embedded
+  messages, meetingSchedule and timestamps. Project.teamId is set with first acceptance;
+  no new Team is created for a project with zero accepted volunteers. The NGO has
+  implicit owner access and is not automatically counted as a volunteer.
+- Team.members is authoritative; membership changes transactionally mirror its userIds
+  into Project.teamMembers. Startup prepareTeams installs a partial unique projectId
+  index and resumably backfills only legacy nonempty teamMembers projects lacking teamId.
+  Existing Team members win over stale mirrored arrays; placeholder Teams survive.
+  Requires a replica set, like previous NGO/funding operations. Conflicts are not deleted.
+- All existing NGO acceptance routes and the new
+  POST /api/projects/:id/accept-applicant/:applicationId share one strict transaction.
+  Project locking serializes first acceptance, membership edits and funding operations.
+  Concurrent acceptances create one Team and preserve both volunteers. Defaults are
+  Volunteer or Skill Contributor according to application type; retries are idempotent.
+- Removing a member is NGO-only, with frontend confirmation. It unassigns tasks, retains
+  message/application history and immediately denies subsequent workspace API requests.
+  Retrying an already-accepted application cannot undo removal. Empty established Teams
+  remain for history. Role edits and meeting scheduling allow owner NGO or Coordinator;
+  current members/owner may create/edit/delete tasks and post messages. Task assignment
+  requires current membership. Arbitrary CSR funders and unrelated NGOs have no access.
+- Every Team route checks current membership/ownership. Member details include public
+  name/photo/city and skills/availability/bio, not email, password hashes or tokens.
+  Message sender/time are server-controlled. Validation bounds strings, hours, statuses,
+  IDs and dates; React renders messages as text.
+- Messages stay embedded intentionally. Detail/messages endpoints return latest 50 in
+  chronological display order, with a timestamp|subdocument-ID cursor to avoid gaps at
+  identical timestamps. The requested timestamp-only before parameter is also accepted.
+  Database projection returns bounded message pages; sortArray requires MongoDB 5.2+.
+  Move messages to a separate indexed collection if volume grows. Prompt 7 can hook
+  into committed messages/skill requests; no WebSocket or push delivery is implemented.
+- /teams/:id provides members, task columns, conversation and upcoming meetings. Messages
+  poll every 12 seconds, catch up across pages after busy intervals, deduplicate and
+  preserve reading position; older history loads on demand. Membership/tasks/meetings
+  refresh every 12 seconds as well, and denied access stops polling.
+- Community /projects/:id and its read/apply APIs complete access to direct NGO projects.
+  Adopted-project applications reuse their source Problem target to preserve deduplication.
+  My Applications links current members to their workspace; removed members lose the link.
+  Existing problem reporting, saving and application actions remain intact.
+- Prompt 6 should use Team.members.length for participation. Existing Prompt 4 reports
+  remain accurate through the synchronized Project.teamMembers mirror; membership edits
+  do not change allocations/spending. Funding remains simulated and separate from
+  volunteer Contribution records. No real payments, notifications or sockets were added.
+- Verification: all 64 backend tests passed (49 existing regression checks plus
+  15 matching/team checks), including exact weighted ranking, permissions on every
+  Team route, concurrent first acceptance, rollback, legacy backfill, member removal,
+  task assignment, same-timestamp message cursors and funded participation counts.
+  Production frontend build passed. Two isolated logged-in Chrome sessions verified
+  skill-request discovery, direct-project apply/NGO acceptance, workspace links,
+  tasks/meetings/roles, messages arriving within one polling interval, older history,
+  catching up across a 65-message burst, confirmation/removal and access revocation.
+  Desktop/mobile screenshots are in artifacts/team-browser/. Existing NGO/community
+  and CSR browser suites also passed, including project management, allocations,
+  withdrawal, spending attribution, reports and dashboard role guards.

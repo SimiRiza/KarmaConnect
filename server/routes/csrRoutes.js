@@ -3,6 +3,7 @@ import { authenticate, authorize } from '../middleware/auth.js';
 import * as ctrl from '../controllers/csrController.js';
 const router = Router();
 router.use(authenticate, authorize('csr_manager'));
+router.get('/me/recommended-projects', ctrl.recommended);
 router.get('/me/profile', ctrl.getProfile);
 router.put('/me/profile', ctrl.updateProfile);
 router.get('/projects', ctrl.discover);

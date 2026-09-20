@@ -20,3 +20,5 @@ export const progress = id => api.get(`/csr/projects/${id}/progress`);
 export const report = id => api.get(`/csr/reports/${id}`);
 export const portfolio = () => api.get('/csr/reports/portfolio');
 export const dashboard = () => api.get('/csr/dashboard-summary');
+
+export const recommendations = () => api.get('/csr/me/recommended-projects', { params: { limit: 6 } });

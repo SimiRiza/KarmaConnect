@@ -1,3 +1,4 @@
+import { acceptIntoTeam } from './teamService.js';
 import { recalculateProjectFunding } from './fundingService.js';
 import mongoose from 'mongoose';
 import User from '../models/User.js';
@@ -320,19 +321,13 @@ export const reviewApplication = (ngoId, applicationId, status, expectedProjectI
   if (String(project.ngoId) !== String(ngoId) || expectedProjectId && String(project._id) !== expectedProjectId) fail('You do not own this application.', 403);
   if (application.status !== 'pending' && application.status !== status) fail('This application has already been reviewed.', 409);
   if (project.status === 'completed' && application.status !== status) fail('This project is completed.', 409);
+  const alreadyAccepted = application.status === 'accepted';
+  await Project.updateOne({ _id: project._id }, { $inc: { __v: 1 } }, { session });
   application.status = status;
   await application.save({
     session
   });
-  if (status === 'accepted') await Project.updateOne({
-    _id: project._id
-  }, {
-    $addToSet: {
-      teamMembers: application.userId
-    }
-  }, {
-    session
-  });
+  if (status === 'accepted') await acceptIntoTeam(project, application, session, alreadyAccepted);
   return {
     application,
     project: await Project.findById(project._id).session(session)

@@ -1,0 +1,15 @@
+import { Router } from 'express';
+import { authenticate } from '../middleware/auth.js';
+import * as ctrl from '../controllers/teamController.js';
+const router = Router();
+router.use(authenticate);
+router.get('/:id', ctrl.detail);
+router.get('/:id/messages', ctrl.messages);
+router.post('/:id/messages', ctrl.mutate('message'));
+router.patch('/:id/members/:userId', ctrl.mutate('role'));
+router.delete('/:id/members/:userId', ctrl.mutate('remove'));
+router.post('/:id/tasks', ctrl.mutate('taskCreate'));
+router.patch('/:id/tasks/:taskId', ctrl.mutate('taskUpdate'));
+router.delete('/:id/tasks/:taskId', ctrl.mutate('taskDelete'));
+router.post('/:id/meetings', ctrl.mutate('meeting'));
+export default router;

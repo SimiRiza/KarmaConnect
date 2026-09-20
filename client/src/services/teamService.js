@@ -1,0 +1,10 @@
+import api from './api';
+export const getTeam = id => api.get(`/teams/${id}`);
+export const getMessages = (id, before) => api.get(`/teams/${id}/messages`, { params: { before } });
+export const sendMessage = (id, content) => api.post(`/teams/${id}/messages`, { content });
+export const setRole = (id, userId, role) => api.patch(`/teams/${id}/members/${userId}`, { role });
+export const removeMember = (id, userId) => api.delete(`/teams/${id}/members/${userId}`);
+export const createTask = (id, data) => api.post(`/teams/${id}/tasks`, data);
+export const updateTask = (id, taskId, data) => api.patch(`/teams/${id}/tasks/${taskId}`, data);
+export const deleteTask = (id, taskId) => api.delete(`/teams/${id}/tasks/${taskId}`);
+export const scheduleMeeting = (id, data) => api.post(`/teams/${id}/meetings`, data);

@@ -17,3 +17,6 @@ export const getApplicants = (id) => api.get(`/problems/${id}/applicants`);
 export const contributeToProblem = (id, payload) => api.post(`/problems/${id}/contribute`, payload);
 export const saveProblem = (id) => api.post(`/problems/${id}/save`);
 export const unsaveProblem = (id) => api.delete(`/problems/${id}/save`);
+
+export const getRecommendations = () => api.get('/users/me/recommended-projects', { params: { limit: 6 } });
+export const getSkillMatches = () => api.get('/users/me/skill-matches');

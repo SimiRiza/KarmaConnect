@@ -1,3 +1,4 @@
+import { csrRecommendations } from './recommendationService.js';
 import Project from '../models/Project.js';
 import NGOProfile from '../models/NGOProfile.js';
 import CSRProfile from '../models/CSRProfile.js';
@@ -67,14 +68,14 @@ export const budgetFilters = range => {
     budgetMax: Number(match[2])
   } : {};
 };
-export async function discoverProjects(query = {}, matching = false) {
+export async function discoverProjects(query = {}, allCandidates = false) {
   const filter = {
     ngoId: {
       $ne: null
     }
   };
   if (query.category && !PROBLEM_CATEGORIES.includes(query.category)) fail('Invalid category.');
-  const categories = matching ? focusCategories(query.focusAreas || []) : query.category ? [query.category] : query.cause ? focusCategories([query.cause]) : [];
+  const categories = query.category ? [query.category] : query.cause ? focusCategories([query.cause]) : [];
   if (categories.length) filter.category = {
     $in: categories
   };
@@ -135,7 +136,7 @@ export async function discoverProjects(query = {}, matching = false) {
   };
   const page = Math.min(100000, Math.max(1, Math.floor(numeric(query.page, 'page') || 1))),
     limit = Math.min(50, Math.max(1, Math.floor(numeric(query.limit, 'limit') || 12)));
-  // Prompt 5 replaces this simple category filter-and-sort with scored bidirectional matching.
+  // Discovery stays filter-based; recommendationService scores the full candidate set separately.
   const [result] = await Project.aggregate([{
     $match: filter
   }, {
@@ -184,17 +185,13 @@ export async function discoverProjects(query = {}, matching = false) {
   }, {
     $match: afterJoin
   }, {
-    $sort: matching ? {
-      overlapCount: -1,
-      fundingGap: -1,
-      createdAt: -1,
-      _id: 1
-    } : {
+    $sort: {
       createdAt: -1,
       _id: 1
     }
   }, {
     $project: {
+      createdAt: 1,
       title: 1,
       problemStatement: 1,
       description: 1,
@@ -225,7 +222,7 @@ export async function discoverProjects(query = {}, matching = false) {
       count: [{
         $count: 'total'
       }],
-      items: [{
+      items: allCandidates ? [{ $match: {} }] : [{
         $skip: (page - 1) * limit
       }, {
         $limit: limit
@@ -238,7 +235,7 @@ export async function discoverProjects(query = {}, matching = false) {
     total,
     page,
     totalPages: Math.ceil(total / limit),
-    matching
+    matching: false
   };
 }
 export async function projectDetail(projectId) {
@@ -336,12 +333,7 @@ export async function dashboard(userId) {
   const [summary, {
     profile
   }, fundings] = await Promise.all([portfolioSummary(userId), getProfile(userId), getFundings(userId)]);
-  const budget = budgetFilters(profile.budgetRange);
-  const recommended = await discoverProjects({
-    focusAreas: profile.csrFocusAreas,
-    ...budget,
-    limit: 6
-  }, true);
+  const recommended = await csrRecommendations(userId, { limit: 6 });
   const projectIds = [...new Set(fundings.filter(f => f.status !== 'withdrawn' && f.projectId).map(f => String(f.projectId._id)))];
   const activity = await Project.find({
     _id: {
@@ -353,7 +345,7 @@ export async function dashboard(userId) {
   return {
     ...summary,
     budgetRange: profile.budgetRange,
-    recommendationNote: Object.keys(budget).length ? 'Filtered using your saved focus areas and INR budget range.' : 'Filtered using your focus areas. Set an INR budget range to include a budget filter.',
+    recommendationNote: recommended.recommendationNote,
     recommendedProjects: recommended.items,
     activeFundings: fundings.filter(f => ['allocated', 'in_progress'].includes(f.status)).slice(0, 6),
     recentActivity: activity.map(p => ({

@@ -1,3 +1,4 @@
+import { skillRequest } from '../controllers/teamController.js';
 import express from 'express';
 import { upload } from '../middleware/upload.js';
 import { getProjectById } from '../services/ngoService.js';
@@ -33,6 +34,7 @@ router.post('/problems/:id/adopt', ctrl.adoptProblem);
 // GET  /api/ngo/projects          — list NGO's own projects (filter by status)
 // GET  /api/ngo/projects/:id      — single project detail
 // PUT  /api/ngo/projects/:id      — update project fields
+router.post('/projects/:id/skill-requests', skillRequest);
 router.post('/projects', ctrl.createProject);
 router.get('/projects', ctrl.getProjects);
 router.get('/projects/:id', ctrl.getProjectById);

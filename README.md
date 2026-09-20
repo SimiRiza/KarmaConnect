@@ -157,10 +157,10 @@ This starts:
 
 ## Build Roadmap
 - [x] **Prompt 1** — Foundation + Authentication System
-- [ ] **Prompt 2** — Community User / Volunteer Dashboard & Problem Reporting
-- [ ] **Prompt 3** — NGO Dashboard & Problem Adoption
-- [ ] **Prompt 4** — CSR Manager Dashboard & Funding Allocation
-- [ ] **Prompt 5** — Matching Engine & Team Formation
+- [x] **Prompt 2** — Community User / Volunteer Dashboard & Problem Reporting
+- [x] **Prompt 3** — NGO Dashboard & Problem Adoption
+- [x] **Prompt 4** — CSR Manager Dashboard & Funding Allocation
+- [x] **Prompt 5** — Matching Engine & Team Formation
 - [ ] **Prompt 6** — Contributions, Budgets & Impact Tracking
 - [ ] **Prompt 7** — Verification System, Trust Scores & Notifications
 - [ ] **Prompt 8** — Final UI, Admin Console & Production Polish
@@ -193,7 +193,7 @@ source-project links instead of deleting or silently merging records.
 ### Verification commands
 
 From `server`, run `npm.cmd test` on Windows (or `npm test` elsewhere). The suite
-includes 49 checks across authentication, community, NGO and CSR workflows.
+includes 64 checks across authentication, community, NGO, CSR, matching and teams.
 From `client`, run `npm.cmd run build` for the production frontend build.
 
 From `server`, `node scripts/verifyNgoBrowser.mjs` exercises the complete NGO flow
@@ -236,6 +236,47 @@ It uses the existing Windows Chrome setup with temporary users, a temporary brow
 profile and an isolated replica set, and saves screenshots to artifacts/csr-browser/.
 The existing verifyNgoBrowser.mjs still covers NGO and community regressions.
 
-Funding statuses, spending attribution, report access, temporary category matching,
+Funding statuses, spending attribution, report access, scored matching,
 and the Prompt 6 contribution reconciliation boundary are documented in gemini.md.
 Downloadable PDF reports and real payments remain deferred as requested.
+
+
+## Prompt 5: Matching and Team workspace
+
+Community and CSR dashboards now use scored recommendations with real point-by-point
+explanations. Volunteer matching scores skills, interests, cause areas, city and a
+recorded-timeline/urgency availability heuristic. CSR matching scores focus areas,
+location, explicit INR budget fit and the managing NGO's track record. Partial CSR
+matches remain visible; ordinary discovery filters keep their original behavior.
+See gemini.md for exact weights, tie order, budget thresholds and missing-data rules.
+
+NGOs can post skill requests from project management. Community dashboards show open
+requests matching their skills, including partial/case-insensitive matches. Direct NGO
+projects now have a community detail/apply page at /projects/:id.
+
+First acceptance creates one Team; later acceptances join it. The existing NGO review
+routes and /api/projects/:id/accept-applicant/:applicationId share a transactional
+implementation. At startup, the server installs a unique partial Team.projectId index
+and backfills legacy projects with accepted volunteers but no teamId. It preserves
+existing Team records and does not create teams for empty projects. Use MongoDB 5.2+
+as a replica set (or Atlas); message page projection uses the sortArray operator.
+
+/teams/:id offers member roles, task columns, meeting scheduling and a conversation
+that polls every 12 seconds. Only current members and the managing NGO can access it.
+The NGO confirms removals; removal revokes access and unassigns tasks, retaining history.
+Coordinator roles can manage roles/meetings; all members can collaborate on tasks and
+messages. Team.members is authoritative; Project.teamMembers stays synchronized for
+existing dashboards and CSR participation reports. Funding remains simulated.
+
+Message API pages contain at most 50 messages. Use nextCursor as the before parameter
+to load older history safely, including messages with identical timestamps. Messages
+remain embedded as requested; migrate to a separate collection if volume grows. No
+push notifications or WebSockets are included.
+
+From server, run node scripts/verifyTeamBrowser.mjs to exercise two separate headless
+Chrome sessions. It verifies scored recommendations, skill requests, apply/accept/team
+links, tasks, meetings, polling, older history, busy-interval catch-up, role edits,
+removal and mobile layout. Screenshots are saved in artifacts/team-browser/. The
+script uses isolated test data and the same Windows Chrome setup as the prior suites.
+Run npm.cmd test and the existing verifyNgoBrowser.mjs / verifyCsrBrowser.mjs scripts
+for regressions. From client, run npm.cmd run build.

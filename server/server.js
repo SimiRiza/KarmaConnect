@@ -1,3 +1,6 @@
+import teamRoutes from './routes/teamRoutes.js';
+import projectRoutes from './routes/projectRoutes.js';
+import { prepareTeams } from './services/teamService.js';
 import express from 'express';
 import path from 'path';
 import helmet from 'helmet';
@@ -81,6 +84,8 @@ app.use('/api/users', userRoutes);
 app.use('/api/problems', problemRoutes);
 app.use('/api/ngo', ngoRoutes);
 app.use('/api/csr', csrRoutes);
+app.use('/api/teams', teamRoutes);
+app.use('/api/projects', projectRoutes);
 
 // 7. 404 Handler for undefined API routes
 app.use('/api/*', (req, res) => {
@@ -98,6 +103,7 @@ if (process.env.NODE_ENV !== 'test' && !process.env.NODE_TEST_CONTEXT) {
   connectDB().then(async () => {
     await prepareNgoIndexes();
     await Funding.createIndexes();
+    await prepareTeams();
     app.listen(PORT, () => {
       console.log(`🚀 KarmaConnect Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
       console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);

@@ -1,0 +1,6 @@
+import React, { useState } from 'react';
+import TaskCard from './TaskCard';
+export default function TaskBoard({ tasks, members, busy, onCreate, onUpdate, onDelete }) {
+  const [title, setTitle] = useState('');
+  return <div className="space-y-5"><form className="flex flex-wrap gap-3" onSubmit={async e => { e.preventDefault(); if (await onCreate({ title })) setTitle(''); }}><label className="flex-1">New task title<input required maxLength={150} className="block border rounded-lg p-3 w-full" value={title} onChange={e => setTitle(e.target.value)} /></label><button disabled={busy} className="self-end bg-brand-600 text-white rounded-xl px-4 py-3">Create task</button></form><div className="grid lg:grid-cols-3 gap-4">{[['todo', 'To Do'], ['in_progress', 'In Progress'], ['done', 'Done']].map(([status, label]) => <section key={status} className="rounded-2xl bg-stone-50 border p-3 space-y-3 min-w-0"><h2 className="font-bold text-lg">{label} ({tasks.filter(t => t.status === status).length})</h2>{tasks.filter(t => t.status === status).map(t => <TaskCard key={t._id} task={t} members={members} busy={busy} onUpdate={data => onUpdate(t._id, data)} onDelete={() => onDelete(t._id)} />)}</section>)}</div></div>;
+}

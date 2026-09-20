@@ -156,7 +156,7 @@ describe('Prompt 4 CSR funding, monitoring and reports', () => {
     assert.equal(dash.status, 200, dash.text);
     assert.match(dash.body.summary.recommendationNote, /Set an INR budget/);
   });
-  test('discovery and temporary matching filter three categories and NGO credibility correctly', async () => {
+  test('discovery filters remain intact while CSR matching ranks partial matches', async () => {
     const source = await Problem.create({
       postedBy: users.community._id,
       title: 'School problem',
@@ -204,12 +204,14 @@ describe('Prompt 4 CSR funding, monitoring and reports', () => {
       timelineMonths: 3
     });
     assert.equal(matches.status, 200, matches.text);
-    assert.deepEqual(matches.body.items.map(p => p._id), [String(education._id)]);
-    assert.equal(matches.body.items[0].overlapCount, 1);
+    assert.equal(matches.body.total, 3);
+    assert.equal(matches.body.items[0]._id, String(education._id));
+    assert.equal(matches.body.items[0].matchScore, 8);
+    assert.equal(matches.body.items[0].matchBreakdown.find(c => c.key === 'focus').points, 3);
     assert.equal((await csr('post', '/match-projects').send({
       focusAreas: ['health'],
       location: 'Pune'
-    })).body.total, 0);
+    })).body.total, 3);
     assert.equal((await csr('get', '/projects?fundingMin=200&fundingMax=100')).status, 400);
     assert.equal((await csr('get', '/projects?timelineMonths=invalid')).status, 400);
     const detail = await csr('get', `/projects/${education._id}`);

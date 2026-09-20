@@ -1,3 +1,4 @@
+import { csrRecommendations } from '../services/recommendationService.js';
 import * as csr from '../services/csrService.js';
 import { allocateFunding, withdrawFunding, portfolioSummary } from '../services/fundingService.js';
 const endpoint = (fn, key, status = 200) => async (req, res, next) => {
@@ -16,7 +17,7 @@ const endpoint = (fn, key, status = 200) => async (req, res, next) => {
 export const getProfile = endpoint(r => csr.getProfile(r.user.id));
 export const updateProfile = endpoint(r => csr.updateProfile(r.user.id, r.body));
 export const discover = endpoint(r => csr.discoverProjects(r.query));
-export const match = endpoint(r => csr.discoverProjects(r.body, true));
+export const match = endpoint(r => csrRecommendations(r.user.id, {}, r.body));
 export const detail = endpoint(r => csr.projectDetail(r.params.id), 'project');
 export const fund = endpoint(r => allocateFunding(r.user.id, r.params.id, r.body, r.get('Idempotency-Key') || r.body.idempotencyKey), 'funding', 201);
 export const fundings = endpoint(r => csr.getFundings(r.user.id, r.query), 'fundings');
@@ -26,3 +27,5 @@ export const progress = endpoint(r => csr.progress(r.user.id, r.params.id));
 export const report = endpoint(r => csr.report(r.user.id, r.params.projectId), 'report');
 export const portfolio = endpoint(r => portfolioSummary(r.user.id), 'summary');
 export const dashboard = endpoint(r => csr.dashboard(r.user.id), 'summary');
+
+export const recommended = endpoint(r => csrRecommendations(r.user.id, r.query));

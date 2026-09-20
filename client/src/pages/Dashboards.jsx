@@ -1,3 +1,5 @@
+import VolunteerMatchCard from '../components/VolunteerMatchCard';
+import SkillRequestCard from '../components/SkillRequestCard';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -96,6 +98,8 @@ const DashboardContainer = ({ title, promptNotice, roleBadge, icon: Icon, childr
 export const CommunityDashboard = () => {
   const { user, profile } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [skillMatches, setSkillMatches] = useState([]);
+  const [matchError, setMatchError] = useState('');
   const [recommendedProblems, setRecommendedProblems] = useState([]);
   const [localProblems, setLocalProblems] = useState([]);
   const [applications, setApplications] = useState([]);
@@ -111,11 +115,13 @@ export const CommunityDashboard = () => {
     const fetchDashboardData = async () => {
       setLoading(true);
       try {
-        const [problemsRes, appRes, impactRes, savedRes] = await Promise.allSettled([
+        const [problemsRes, appRes, impactRes, savedRes, recommendationsRes, skillsRes] = await Promise.allSettled([
           communityService.getProblems({ limit: 12, sort: 'newest' }),
           communityService.getMyApplications(),
           communityService.getMyImpact(),
-          communityService.getSavedProblems()
+          communityService.getSavedProblems(),
+          communityService.getRecommendations(),
+          communityService.getSkillMatches()
         ]);
 
         const allProblems = problemsRes.status === 'fulfilled' ? problemsRes.value.data.items || [] : [];
@@ -133,19 +139,9 @@ export const CommunityDashboard = () => {
         );
         setLocalProblems(local.length > 0 ? local.slice(0, 3) : allProblems.slice(0, 3));
 
-        // Recommended based on user causeAreas or skills
-        const userCauses = (profile?.causeAreas || []).map(c => c.toLowerCase());
-        const userSkills = (profile?.skills || []).map(s => s.toLowerCase());
-
-        const scored = allProblems.map(p => {
-          let score = 75; // base score
-          if (userCauses.includes(p.category?.toLowerCase())) score += 15;
-          if (p.location?.city?.toLowerCase() === userCity.toLowerCase()) score += 10;
-          return { ...p, matchScore: Math.min(98, score) };
-        });
-
-        scored.sort((a, b) => b.matchScore - a.matchScore);
-        setRecommendedProblems(scored.slice(0, 3));
+        setRecommendedProblems(recommendationsRes.status === 'fulfilled' ? recommendationsRes.value.data.items : []);
+        setSkillMatches(skillsRes.status === 'fulfilled' ? skillsRes.value.data.items : []);
+        setMatchError(recommendationsRes.status === 'rejected' || skillsRes.status === 'rejected' ? 'Some matches could not load. Refresh to try again.' : '');
       } catch (err) {
         console.error('Error fetching dashboard data:', err);
       } finally {
@@ -414,19 +410,13 @@ export const CommunityDashboard = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {recommendedProblems.map((prob) => (
-              <ProblemCard
-                key={prob._id}
-                problem={prob}
-                saved={savedIds.includes(prob._id)}
-                onToggleSave={handleToggleSave}
-                matchScore={prob.matchScore}
-                onApply={handleOpenApply}
-              />
+              <VolunteerMatchCard key={prob._id} project={prob} />
             ))}
           </div>
         )}
       </div>
 
+      <section className="space-y-4"><h2 className="text-2xl font-bold">Skill Matches</h2>{matchError && <p role="alert" className="text-red-700">{matchError}</p>}<div className="grid md:grid-cols-2 gap-4">{skillMatches.map(r => <SkillRequestCard key={r._id} request={r} />)}</div>{!loading && !skillMatches.length && <p>No open requests match your skills yet.</p>}</section>
       {/* 5. Local Problems Near You */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">

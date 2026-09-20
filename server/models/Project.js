@@ -9,7 +9,7 @@ import { PROBLEM_CATEGORIES, PROBLEM_STATUSES } from './Problem.js';
  *
  * NOTE on future expansions:
  *   - Prompt 4 (CSR Dashboard): CSR browsing and simulated allocations reconciled through Funding
- *   - Prompt 5 (Matching + Team Formation): full team workspace, chat, volunteer tasks built on `teamMembers`
+ *   - Prompt 5 (Matching + Team Formation): Team workspace; Team.members is authoritative and teamMembers mirrors its IDs
  *   - Prompt 6 (Contributions + Impact): real contributions wiring into `fundingReceived`, receipts, transparency
  */
 
@@ -55,6 +55,8 @@ const milestoneSchema = new mongoose.Schema(
 
 const projectSchema = new mongoose.Schema(
   {
+    teamId: { type: mongoose.Schema.Types.ObjectId, ref: 'Team', default: null },
+    skillRequests: [{ skillNeeded: { type: String, required: true, trim: true, maxlength: 100 }, hoursNeeded: { type: Number, required: true, min: 0.1 }, description: { type: String, required: true, trim: true, maxlength: 2000 }, status: { type: String, enum: ['open', 'filled'], default: 'open' }, createdAt: { type: Date, default: Date.now } }],
     fundedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     ngoId: {
       type: mongoose.Schema.Types.ObjectId,

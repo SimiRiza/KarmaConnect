@@ -1,3 +1,6 @@
+import Team from '../models/Team.js';
+import { volunteerRecommendations, skillMatches } from '../services/recommendationService.js';
+import { endpoint } from '../controllers/teamController.js';
 import { Router } from 'express';
 import mongoose from 'mongoose';
 import User from '../models/User.js';
@@ -23,6 +26,8 @@ const normalizeStringArray = (value) => {
 router.use(authenticate);
 router.use(authorize('community_user'));
 
+router.get('/me/recommended-projects', endpoint(r => volunteerRecommendations(r.user.id, r.query)));
+router.get('/me/skill-matches', endpoint(r => skillMatches(r.user.id, r.query)));
 router.get('/me/profile', async (req, res, next) => {
   try {
     const user = await User.findById(req.user._id);
@@ -268,12 +273,16 @@ router.get('/me/impact', async (req, res, next) => {
 router.get('/me/applications', async (req, res, next) => {
   try {
     const applications = await Application.find({ userId: req.user._id })
-      .populate('problemId', 'title category status location urgency createdAt')
+      .populate('problemId', 'title category status location urgency createdAt linkedProjectId')
+      .populate('projectId', 'title category status location.city location.area teamId')
       .sort({ createdAt: -1 })
       .lean();
 
+    const teams = await Team.find({ 'members.userId': req.user._id }).select('projectId').lean();
     const items = applications.map((application) => ({
       ...application,
+      teamId: teams.find(t => String(t.projectId) === String(application.projectId?._id || application.problemId?.linkedProjectId))?._id || null,
+      project: application.projectId,
       problem: application.problemId ? {
         ...application.problemId,
         location: application.problemId.location ? (() => {

@@ -1,3 +1,5 @@
+import TeamWorkspacePage from './pages/TeamWorkspacePage';
+import CommunityProjectPage from './pages/CommunityProjectPage';
 import CSRLayout from './pages/csr/CSRLayout';
 import CSRDashboardPage from './pages/csr/CSRDashboardPage';
 import CSRProfilePage from './pages/csr/CSRProfilePage';
@@ -44,6 +46,8 @@ export const App = () => {
 
       <main className="flex-grow">
         <Routes>
+          <Route path="/teams/:id" element={<ProtectedRoute><TeamWorkspacePage /></ProtectedRoute>} />
+          <Route path="/projects/:id" element={<RoleProtectedRoute allowedRoles={['community_user']}><CommunityProjectPage /></RoleProtectedRoute>} />
           {/* Public Routes */}
           <Route path="/" element={<LandingPage />} />
           <Route path="/signup" element={<SignupPage />} />

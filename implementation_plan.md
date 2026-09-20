@@ -1,256 +1,175 @@
-﻿# Implementation Plan - Prompt 4: CSR Manager Dashboard
+﻿# Implementation Plan - Prompt 5: Matching and Team Formation
 
-Status: Approved by the user, implemented and verified. See gemini.md for final decisions.
+Status: Approved by the user, implemented and verified.
 
-## Objective
-Extend KarmaConnect with the complete csr_manager experience for discovering,
-evaluating, funding and monitoring NGO-managed Projects. Preserve authentication,
-existing records, the Community User dashboard and the NGO dashboard. Funding is
-explicitly simulated; no payment gateway, real matching algorithm, chat,
-notifications or admin verification tools are included.
+## Scope and existing foundations
+Read gemini.md and brandguidelines.md. Extend the existing React/Express/Mongoose
+application without rebuilding authentication, dashboards, or funding flows.
+Prompt 4 is complete with 49 passing backend tests and existing browser suites.
+This plan replaces the previous completed Prompt 4 plan; its decisions remain in gemini.md.
 
-Read before planning: root gemini.md and brandguidelines.md. Implementation will
-reuse the existing React/Router/Tailwind stack, service/controller patterns,
-strictTransaction helper, status pipeline, verification badge and funding display.
+Current Team has only name/status; retain those fields while expanding it.
+NGO reviewApplication already uses strict transactions and adds accepted users to
+Project.teamMembers. Both existing acceptance routes and the requested new alias
+will share the expanded service. Community recommendations currently use client-side
+scores; CSR matching currently filters categories before sorting.
 
-## Current project findings
-- CSRProfile already contains all requested editable profile fields and a read-only
-  verification status. It needs the six aggregate statistics.
-- There is no Funding model, CSR API/service or complete CSR page set yet.
-  App.jsx currently mounts a placeholder CSR dashboard and also permits admin;
-  the new /csr routes will allow only csr_manager.
-- Project already contains ownership, reciprocal Problem links, material needs,
-  milestones, beneficiary estimates, team members, photos and funding totals.
-- NGO resource updates store fundingSpent as a cumulative total in each
-  resourceUpdates snapshot. Summing these snapshots would double-count spending.
-- NGO resource tracking already allows recorded spending before any funding is
-  received. Existing amounts and history must survive CSR reconciliation.
-- Project has no dedicated urgency, delays/issues, milestone completion timestamps
-  or individual photo upload timestamps. Adopted projects can inherit urgency from
-  their source Problem; direct projects cannot truthfully claim an urgency.
-- Existing signup budgetRange values are strings with USD labels; project funding
-  uses INR. Existing focus-area labels also differ from Project category enum values.
-- The current baseline has 34 backend tests and a reusable headless browser check
-  covering NGO and community workflows. No new charting dependency is needed.
+## 1. Pure matching services
+Create server/services/volunteerMatching.js and csrMatching.js, with pure functions
+accepting normalized profile data and candidate arrays. Do not mutate inputs or query
+MongoDB in scoring functions. Return matchScore, an exact component breakdown, and
+reasons derived from the contributions that actually earned points. Stable ties use
+creation time then ID. Scores are points, never fabricated percentages.
 
-## 1. Funding and reporting decisions proposed for approval
+Volunteer formula: 3 per distinct skill overlap + 2 per interest overlap + 2 for
+same city + 1 for availability fit + 2 per cause-area overlap. Normalize whitespace,
+case and existing category labels; deduplicate within each scoring dimension.
+Use requiredSkills for projects and category for interests/causes; raw Problems
+have no structured skill requirements, so do not infer skills from descriptions.
+Availability: flexible earns 1 when urgency or valid timeline is recorded;
+weekdays/weekends earn 1 when a valid project date interval includes that day type.
+Missing or unrecognized evidence earns zero. Explain the heuristic in returned reasons.
+Pass any needed reference date into the pure function explicitly.
 
-### Currency and budget display
-- Treat new simulated allocations as INR, matching existing Project funding fields.
-  Validate positive finite amounts with at most two decimals; calculate in integer
-  paise internally and persist the requested Number fields in rupees.
-- Preserve CSRProfile.budgetRange as a string. Offer explicit INR ranges in the new
-  CSR profile editor while retaining a current legacy value until the user edits it.
-- Do not silently convert a saved dollar range into INR. Recommendations use saved
-  numeric budget limits only when the range is explicitly interpretable as INR;
-  otherwise apply focus areas and explain that the budget filter is not set.
-- The dashboard shows the configured budget range, rather than inventing an exact
-  total company budget. The budget page shows allocated, spent and remaining
-  allocation balance. Exact annual company budget is not present in the schema.
+Candidates include all unfinished Projects and unlinked unfinished Problems.
+Represent adopted Problems through their Project once, avoiding duplicate results.
+Include target type/ID so cards navigate/apply to the correct existing resource.
+Score the full eligible candidate set before taking top N (limit default 10, max 50).
 
-### Single funding reconciliation service
-- Create recalculateProjectFunding(projectId, session), called by all Funding
-  mutations and by NGO resource/status/completion updates that affect funded projects.
-- Sum non-withdrawn Funding.amountAllocated into Project.fundingReceived.
-  Withdrawn records remain as history and contribute zero to fundingReceived,
-  fundedBy and current portfolio totals. fundedBy contains distinct active funders.
-- Preserve NGO spending as the source of truth: use the latest cumulative
-  resourceUpdates fundingSpent snapshot, or the existing Project.fundingSpent when
-  there is no history. Never sum cumulative snapshots or erase historical spending.
-- Attribute this recorded total to non-withdrawn allocations oldest first, with
-  allocationDate and _id as a deterministic order. Cap each allocation's
-  amountSpentSoFar at its amountAllocated. Example: allocations of INR 100 and
-  INR 200 with INR 150 spent produce spent shares of INR 100 and INR 50.
-- If spending exceeds current CSR allocations, retain Project.fundingSpent and show
-  the difference as unattributed project spending. It does not inflate any CSR's
-  amount spent. This preserves the NGO workflow and provides a clear reconciliation
-  boundary for volunteer contributions in Prompt 6. Later allocations may cover
-  previously unattributed spending under the same oldest-first rule.
-- Updating/correcting the NGO's cumulative spending total, with its required note,
-  recalculates attribution and every affected CSR profile in the same transaction.
-- Allocation statuses derive from project state and attributed spend: completed
-  when the project completes; otherwise in_progress when the project is in_progress
-  or the allocation has spending; otherwise allocated. Withdrawn is terminal.
-  A same-request retry of a successful withdrawal returns the withdrawn record.
-- Withdrawal requires allocated status and zero attributed spending. It cannot
-  race with spending or completion to remove funds already committed by those rules.
+CSR formula: 3 per focus overlap + 2 for same city/state + budget fit (2 within
+range, 1 for a positive requirement below the range or up to 20% above its maximum,
+otherwise 0) + NGO credibility (1 verified, independently 0.5 for >3 prior projects).
+Use fundingRequired as requested, not funding gap. Parse explicit INR ranges only;
+legacy dollars/unknown budgets earn no budget points and remain visible unchanged.
+User.location provides company location; Project currently has city/area but no
+state. Compare city when available, state only when explicitly recorded; never
+infer project state from NGO address or area text.
 
-### Ownership, transactions and accurate aggregates
-- CSR users cannot create, edit, adopt or move the status of any Project/Problem.
-  Funding services are the only CSR path that updates derived Project funding fields.
-- Browsing/evaluation is available to csr_manager accounts as requested. Do not add
-  a new CSR verification gate to simulated funding; show verification read-only.
-- Fundings and portfolio/report data are scoped to the requesting CSR. Reports and
-  monitoring require a non-withdrawn allocation to that project; an own withdrawn
-  record remains visible in funding history. Return 403 for other users' fundings.
-- Use strict replica-set transactions for allocation, withdrawal and reconciliation.
-  Serialize on the Project before computing totals, and on affected CSRProfile
-  records in stable order, to avoid lost updates across concurrent operations.
-- Add a client-generated idempotency key to funding requests and a compound unique
-  index scoped to csrUserId. Network retries must not allocate twice; genuinely
-  separate allocations to the same project remain supported.
-- Reject new allocations to completed projects and amounts exceeding the current
-  funding gap. Recheck the gap inside the transaction so simultaneous funders cannot
-  overallocate. Do not change existing project status automatically when funding arrives.
-- CSR totals count distinct non-withdrawn funded projects/NGOs, not Funding rows.
-  Count beneficiaries only for completed projects (using the existing completion
-  beneficiary count). Show ongoing project beneficiaries as estimates separately.
-  Sum teamMembers.length once per funded project as requested; label this as
-  volunteer participation across projects, not globally unique volunteers.
+POST match-projects retains its existing request/response envelope and pagination.
+Explicit discovery constraints remain supported; focus/location/budget preferences
+contribute scores rather than excluding every partial match. Preserve ordinary
+GET project discovery filters. Score before pagination, using current NGO profiles.
+New CSR recommendations use saved company/user data and the same scoring function.
+Remove outdated filter-only dashboard text and fabricated client scores.
 
-## 2. Model and service extensions
-- Add server/models/Funding.js with csrUserId, projectId, amountAllocated,
-  amountSpentSoFar, allocationDate, status, notes and timestamps. Add the internal
-  idempotency key and indexes for ownership/status/project lookups.
-- Extend Project with fundedBy only; retain existing fields and data. Protect
-  fundedBy, fundingReceived and allocation-level spending from arbitrary client edits.
-- Extend CSRProfile with totalBudgetAllocated, totalAmountSpent, activeProjectsCount,
-  completedProjectsCount, totalBeneficiariesReached and totalNgosPartnered, defaulting
-  to zero. Profile PUT must not accept these totals or verificationStatus.
-- Add separate funding reconciliation, CSR statistics, CSR discovery and reporting
-  services. Controllers remain thin and reuse existing error/validation conventions.
-- Integrate funded-project reconciliation into NGO resource updates, status changes,
-  completion and edits to completed beneficiary counts. Keep the no-Funding NGO
-  behavior and all existing completion/ownership/receipt rules intact.
-- Preserve the existing community Contribution model and amounts. Do not count them
-  again as CSR funds. Clearly document Prompt 6's future unified reconciliation work.
-- Add indexes without deleting records or rebuilding unrelated indexes.
+## 2. Models and compatibility
+Expand Team with projectId, members (userId/role/joinedAt), tasks
+(title/description/assignedTo/dueDate/status/createdAt), messages
+(senderId/content/sentAt), meetingSchedule (title/dateTime/notes), timestamps.
+Keep embedded subdocument IDs. Use a partial unique projectId index so old placeholder
+records without a projectId survive. Bound input lengths and validate dates/statuses.
+Document future extraction of messages into a paginated collection when volume grows.
 
-## 3. API implementation
-Every route below uses authenticate + authorize('csr_manager'). Register static
-reports/portfolio before the parameterized report route.
+Add Project.teamId and skillRequests (skillNeeded/hoursNeeded/description/status/
+createdAt) without removing teamMembers or existing fields. Team.members becomes
+authoritative; transactionally mirror user IDs into Project.teamMembers on change.
+Owning NGO has implicit access and is not automatically counted as a volunteer.
 
-| Method | Route | Behavior |
-| --- | --- | --- |
-| GET, PUT | /api/csr/me/profile | Own profile; validated editable fields only |
-| GET | /api/csr/projects | Paginated NGO-managed Project discovery |
-| GET | /api/csr/projects/:id | Evaluation with curated NGO credibility and evidence |
-| POST | /api/csr/match-projects | Temporary filtered/sorted project matching |
-| POST | /api/csr/projects/:id/fund | Simulated allocation, idempotency and recalculation |
-| GET | /api/csr/fundings | Own records, with status filter and project summaries |
-| GET | /api/csr/fundings/:id | Own funding detail |
-| PATCH | /api/csr/fundings/:id/withdraw | Guarded withdrawal and recalculation |
-| GET | /api/csr/projects/:id/progress | Curated monitoring for own funded project |
-| GET | /api/csr/reports/portfolio | Aggregate own portfolio report |
-| GET | /api/csr/reports/:projectId | Structured report for own funded project |
-| GET | /api/csr/dashboard-summary | Accurate aggregate totals and dashboard sections |
+New projects get no Team until first accepted volunteer. Existing projects that
+already have accepted members need a compatibility backfill: implement an idempotent
+strict-transaction helper and resumable startup backfill for nonempty legacy
+teamMembers only. Preserve existing IDs, create one team, deduplicate members, and
+never overwrite a pre-existing Team from stale mirrored data. Projects with zero
+accepted members remain without teams. Install uniqueness before backfill; conflicting
+records fail clearly rather than deleting data.
 
-### Discovery and temporary matching
-- Browse Projects with a managing NGO, never raw Problems. Default to unfinished
-  projects with fundingRequired > fundingReceived. Include-fully-funded toggle
-  broadens discovery; completed projects may be evaluated but cannot receive funding.
-- Support category/cause, city/area, fundingRequired min/max, NGO verification,
-  beneficiaries min/max, urgency and duration filters, with bounded pagination.
-- Join the NGO profile for current verification and track record; avoid exposing
-  applicant/contact/private user data, raw coordinates or other CSR funding notes.
-- Derive urgency from sourceProblemId where available; display Not specified for
-  direct projects and exclude unspecified urgency when an urgency filter is applied.
-- Compute duration from startDate/expectedEndDate. Unknown duration is shown as
-  unspecified and excluded when a maximum duration is explicitly requested.
-- Normalize focus-area labels through an explicit category mapping, supporting both
-  enum values and existing signup labels. Reject unmappable inputs with useful
-  validation rather than silently pretending to find matches.
-- Match on overlapping category, location, fundingRequired budget interval and
-  timeline limit, with overlap count then funding gap/creation date as stable sort.
-  A project currently has one category, so overlap is usually 0 or 1; do not invent
-  a sophisticated score. Comment clearly that Prompt 5 replaces this filter-and-sort.
+## 3. Acceptance and membership consistency
+Extend the existing NGO acceptance service, preserving its response shape, ownership,
+completed-project restrictions and problem-linked application support. Add
+POST /api/projects/:id/accept-applicant/:applicationId as an NGO-only alias.
+Serialize team creation/membership writes on Project inside strict transactions;
+concurrent first acceptances create one team and preserve all accepted members.
+Assign Volunteer or Skill Contributor from the actual application contribution type.
+Repeated acceptance is idempotent. Removing a member retains application decision
+history; retrying that already-accepted application must not silently re-add them.
+Unassign their tasks on removal, retain messages, and revoke access immediately.
+An empty established Team may remain to preserve workspace history.
 
-### Monitoring and reports
-- Report both project-wide required/received/spent/remaining totals and this CSR's
-  allocated/spent/remaining share with unambiguous labels and INR units.
-- Include current NGO verification/track record, timeline, materials (quantity data,
-  without invented item prices), milestones, before/progress/after evidence,
-  participation counts and a factual outcomes summary derived from project state.
-- Flag overdue unfinished milestones and overdue project end dates as derived
-  schedule warnings. Existing resource notes remain resource notes, not fabricated
-  incident records. Say that no separate issue log is recorded in the current model.
-- Recent activity is a view of available evidence and resource update timestamps:
-  list completed milestones/photo counts and project last-updated time without
-  claiming that each milestone/photo has an event timestamp.
-- Reports are structured JSON with generatedAt and simulation labeling. Render a
-  presentable UI now; downloadable PDF/export remains Prompt 8.
-- Use a shared aggregation pipeline for profile/portfolio/dashboard counts where
-  practical, deduplicating projects before computing beneficiaries and participation.
+## 4. Team API and authorization
+Add thin controllers and team service/routes. Every request authenticates and checks
+current Team membership or ownership of its Project, including writes and pagination.
+Do not grant unrelated NGOs, CSR funders, or admins implicit workspace access.
+Populate only appropriate public member profile fields; never tokens, hashes or
+private contact fields. Validate task assignees against current membership.
 
-## 4. Frontend pages and reusable components
-Replace only the CSR placeholder route; keep Community/NGO pages and guards intact.
-Add CSR navigation, role-aware discovery links and all routes beneath a guard with
-allowedRoles=['csr_manager'], including a protected /csr/* fallback.
+- GET /api/teams/:id: members, tasks, meetings, latest 50 messages and older cursor.
+- PATCH /api/teams/:id/members/:userId: owner NGO or Coordinator changes role.
+- DELETE /api/teams/:id/members/:userId: owner NGO only, frontend confirmation.
+- POST /api/teams/:id/tasks and PATCH/DELETE /tasks/:taskId: member or owner.
+- POST /api/teams/:id/meetings: owner or Coordinator only.
+- POST /api/teams/:id/messages: member or owner; sender/timestamps server-controlled.
+- GET /api/teams/:id/messages?before=...: latest/older bounded pages.
 
-1. /csr/dashboard: configured budget range, allocated/spent/remaining totals,
-   projects, NGOs, participation and beneficiary cards; profile-based recommended
-   projects; own active funding summaries; honest recent project updates.
-2. /csr/profile: editable company/manager/industry/website, focus-area chips and
-   budget range; read-only verification explanation. Keep legacy budget values visible.
-3. /csr/discover-projects: CSRProjectCard grid, filter sidebar including urgency and
-   duration, fully-funded toggle, pagination, and a distinct Best Matches panel.
-4. /csr/projects/:id: evaluation details, NGOCredibilityCard, materials and funding
-   breakdown, timeline/evidence/skills/beneficiaries, and FundModal.
-5. /csr/portfolio: funding/project status views, status filter, allocation history,
-   guarded withdrawal and links to monitoring/reports. Group repeated allocations
-   clearly so users understand multiple records on the same project.
-6. /csr/projects/:id/monitor: milestone checklist, own/project funding summaries,
-   photo stages and visible derived schedule warnings.
-7. /csr/reports: PortfolioSummaryCard plus funded project list and clean ReportView
-   sections with genuine figures, evidence and explicit estimated/reached labels.
-8. /csr/budget: totals and a per-project INR table, distinguishing current allocation
-   balance from the company's unrecorded exact annual budget. No new chart library.
+Order messages by sentAt plus subdocument ID; return a composite cursor for reliable
+pagination through identical timestamps, while accepting the requested timestamp-only
+before parameter. Fetch message slices without returning all historical messages.
+Use atomic writes/transactions so concurrent tasks/messages/removals do not lose data
+or authorize using stale membership. Render messages as text, not HTML.
 
-Build CSRProjectCard, NGOCredibilityCard, FundModal, ReportView and
-PortfolioSummaryCard. Reuse StatusPipeline, FundingProgressBar, SkillsChipInput and
-VerificationBadge. Give VerificationBadge an optional entity label so the CSR
-profile says Verified company while existing NGO uses still say Verified NGO.
+## 5. Recommendations and skill request API
+- GET /api/users/me/recommended-projects: community-only scored mixed candidates.
+- GET /api/csr/me/recommended-projects: CSR-only scored managed Projects.
+- POST /api/csr/match-projects: same interface with real scored ordering.
+- POST /api/ngo/projects/:id/skill-requests: owning NGO, validated positive hours,
+  nonempty skill and description; reject new requests on completed projects.
+- GET /api/users/me/skill-matches: open requests on unfinished projects, normalized
+  case-insensitive partial skill matching, pagination and explicit matched skill.
 
-FundModal explicitly says this is a simulated allocation and that payment processing
-will be added later. Keep an idempotency key through retries, disable duplicate
-submissions, validate the amount, and refresh funding gap and portfolio data after
-success. Support keyboard navigation, accessible dialogs/labels, responsive tables,
-and loading/error/empty/success states. Use the existing brand palette with a
-professional, data-forward layout and no invented impact or budget values.
+No push notifications, sockets or fabricated notification feed. Document skill requests
+and message writes as future Prompt 7 integration points.
 
-## 5. Validation and acceptance coverage
-Before implementation, run the existing 34 tests and frontend build as a baseline.
-All write tests and browser fixtures use isolated in-memory replica sets, never the
-user's application data.
+## 6. Frontend
+Keep brand palette, current navigation, loading/error/empty states and role boundaries.
+Community dashboard fetches actual recommendations and a distinct Skill Matches
+section. Preserve existing problem actions and support Project recommendation links
+and the existing project application path; expose workspace links for accepted users.
+CSR dashboard uses its new recommendation endpoint; Discover shows actual score reasons.
+NGO project management adds a skill-request form/list and replaces Team placeholder
+with a workspace link (or existing accept-applicants empty state).
 
-- Verify authentication/role restrictions on every new endpoint and all CSR direct
-  URLs; explicitly prove CSR cannot call NGO create/adopt/edit or community posting.
-- Test editable profile fields, blocked self-verification/stat edits and legacy
-  budget preservation; reject invalid amounts, filters, URLs and IDs.
-- Seed at least three categories, multiple NGO verification states, cities, funding
-  gaps, beneficiary counts and timelines; assert browse/match results exactly.
-- Fund one project from two CSR accounts and assert aggregate fundingReceived,
-  unique fundedBy, per-user ownership and no duplicate counts for repeat allocations.
-- Test duplicate-request idempotency, competing allocations near the gap, rollback
-  after an injected failure and rejection on unsupported standalone transactions.
-- Log NGO spending and assert the exact oldest-first attribution, retained receipt
-  history, CSR totals and project spending. Test spending corrections, legacy
-  spending with no funding, and a later allocation covering that spending.
-- Verify eligible withdrawal, rejection after spending/in_progress/completion,
-  ownership, retries and withdrawal races with NGO resource updates.
-- Complete funded projects through the existing NGO API and verify Funding statuses,
-  NGO/CSR stats and report numbers immediately, including concurrent completions.
-- Compare per-project and portfolio reports directly with seeded database state,
-  covering multiple allocations/projects/NGOs, withdrawn rows, beneficiary edits,
-  empty portfolios and volunteer counts.
-- Run all existing auth/community/NGO tests and browser workflows, explicitly
-  retaining NGO create/adopt and community signup/login/post/apply.
-- Add CSR headless-browser coverage for profile, browse, matching, evaluation,
-  simulated funding, portfolio/withdrawal, monitoring, reports, budget and direct
-  role-guard checks. Inspect desktop/mobile screenshots and uncaught errors.
-- Run the production frontend build and document any actual limitations. Reuse
-  the existing browser tooling and dependencies.
+Build MatchScoreBadge, SkillRequestCard, MemberRow, TaskCard, TaskBoard and MessageThread.
+Add authenticated /teams/:id with server-enforced team access, separate from dashboard
+role guards. Members tab permits NGO/coordinator role edits, NGO removal with explicit
+confirmation. Tasks tab supports create/assign/edit/delete/status updates without reload.
+Messages tab polls every 12 seconds with cleanup on unmount, deduplication, older-message
+loading, preserved reading position and visible retry errors. Stop polling on access
+denial. Upcoming meetings and NGO/coordinator scheduling are visible in workspace.
+Keep responsive layout, accessible labels/dialogs and usable keyboard focus.
 
-## 6. Documentation and delivery
-After implementation and verification, update gemini.md's build checklist and known
-decisions with Funding, the shared reconciliation service, spending attribution,
-withdrawal/concurrency rules, simulation status, currency/legacy budget behavior,
-portfolio counting and Prompt 5/6 extension points. Update README setup/test notes.
-Mark Prompt 4 complete only once its scope and regression checks are finished.
+## 7. Verification
+Run the existing 49 backend tests and production build as baseline. Use isolated
+memory replica sets/browser fixtures, never application data.
+- Unit-test exact score components, at least five differently matching candidates,
+  normalization, empty profiles, availability evidence, ties, partial budgets and
+  independent NGO credibility bonuses. Confirm input arrays are unchanged.
+- API-test both recommendation endpoints and CSR matching ordering/reasons/pagination,
+  adopted-problem deduplication, preserved discovery filters and role restrictions.
+- Test skill request ownership/validation and case-insensitive partial matches.
+- Test first/concurrent/repeated acceptances, legacy backfill, rollback, single-team
+  uniqueness, removed-member acceptance retries, mirrored IDs and funded reports.
+- Test every team route with member, owner, coordinator, unrelated user/NGO/CSR,
+  removed member and unauthenticated caller. Test valid assignees and input errors.
+- Test task/meeting/message persistence, concurrent writes and same-time cursor paging.
+- Browser-test two separate logged-in sessions: accepted member and owning NGO;
+  verify posted messages appear within one polling interval, tasks update without
+  reload, roles/removal/meetings work, and revoked users lose workspace access.
+- Retest NGO project management and CSR allocation/withdrawal/monitoring using existing
+  browser suites and full backend regression suite. Update outdated matching-specific
+  expectations to the new formula without weakening funding/auth assertions.
+- Build frontend; inspect desktop/mobile workspace screenshots and runtime errors.
+
+## 8. Documentation and completion
+After implementation/tests, mark Prompt 5 complete in gemini.md and record formulas,
+normalization, availability/budget heuristics, Team source of truth, legacy backfill,
+permissions, message cursor/polling design and acceptance/removal semantics. Document
+Team.members.length as Prompt 6 participation source and Prompt 7 trigger boundaries.
+Update README test instructions and this plan with actual verification results.
 
 ## Execution status
-User approval was received before implementation. All eight CSR pages and requested
-API routes are implemented. All 49 backend tests and the production frontend build
-passed. CSR and existing NGO/community browser suites passed; screenshots are in
-artifacts/csr-browser/ and artifacts/ngo-browser/. gemini.md marks Prompt 4 complete
-and records reconciliation rules and future-prompt extension points.
+User approval was received before application implementation. Matching, skill requests,
+team formation, workspace and compatibility paths are complete. All 64 backend tests
+and the production frontend build passed. Team browser checks passed with two isolated
+logged-in sessions, including message polling, older history and 65-message catch-up.
+Existing NGO/community and CSR browser suites passed. Desktop/mobile workspace images
+are in artifacts/team-browser/. gemini.md marks Prompt 5 complete and records the final
+decisions and Prompt 6/7 integration boundaries.

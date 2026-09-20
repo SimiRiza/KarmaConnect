@@ -68,7 +68,7 @@ export default function CSRDiscoverPage() {
       setMatching(false);
     }
   };
-  return <Page title="Discover projects" error={error}><section className={panel}><h2 className="text-xl font-bold">Find matching projects</h2><p className="text-stone-600">Filter by your focus areas, budget and timeline. These are simple matches, not a scored recommendation system.</p><form onSubmit={findMatches} className="space-y-4"><SkillsChipInput label="Focus areas" value={matchForm.focusAreas} onChange={focusAreas => setMatchForm(f => ({
+  return <Page title="Discover projects" error={error}><section className={panel}><h2 className="text-xl font-bold">Find matching projects</h2><p className="text-stone-600">Rank by focus areas, location, INR budget fit and NGO track record. Each match explains its points. Timeline remains an optional limit.</p><form onSubmit={findMatches} className="space-y-4"><SkillsChipInput label="Focus areas" value={matchForm.focusAreas} onChange={focusAreas => setMatchForm(f => ({
           ...f,
           focusAreas
         }))} placeholder="e.g. education, environment" /><div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">{[['location', 'Location'], ['budgetMin', 'Minimum budget (INR)'], ['budgetMax', 'Maximum budget (INR)'], ['timelineMonths', 'Maximum months']].map(([key, label]) => <label key={key}>{label}<input type={key === 'location' ? 'text' : 'number'} min="0" step="any" className={inputClass} value={matchForm[key]} onChange={e => setMatchForm(f => ({

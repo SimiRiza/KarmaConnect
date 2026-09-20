@@ -1,0 +1,11 @@
+import { Router } from 'express';
+import { authenticate, authorize } from '../middleware/auth.js';
+import { endpoint } from '../controllers/teamController.js';
+import { reviewApplication } from '../services/ngoService.js';
+import * as community from '../services/communityProjectService.js';
+const router = Router();
+router.use(authenticate);
+router.post('/:id/accept-applicant/:applicationId', authorize('ngo'), endpoint(r => reviewApplication(r.user.id, r.params.applicationId, 'accepted', r.params.id)));
+router.get('/:id', authorize('community_user'), endpoint(r => community.projectDetail(r.user.id, r.params.id)));
+router.post('/:id/apply', authorize('community_user'), endpoint(r => community.apply(r.user.id, r.params.id, r.body)));
+export default router;
