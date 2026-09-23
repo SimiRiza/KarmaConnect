@@ -1,3 +1,6 @@
+import notificationRoutes from './routes/notificationRoutes.js';
+import { adminRoutes, trustRoutes } from './routes/trustRoutes.js';
+import { prepareTrust } from './services/trustService.js';
 import { prepareImpact } from './services/impactMigration.js';
 import { listImpactRecords } from './services/impactCalculations.js';
 import { authenticate } from './middleware/auth.js';
@@ -83,7 +86,10 @@ app.get('/api/health', (req, res) => {
 
 // 6. Static uploads and Feature Routes
 app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
+app.use('/api/admin', adminRoutes);
+app.use('/api/notifications', notificationRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api', trustRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/problems', problemRoutes);
 app.use('/api/ngo', ngoRoutes);
@@ -106,6 +112,7 @@ app.use(errorHandler);
 // 9. Start Server only when executed directly
 if (process.env.NODE_ENV !== 'test' && !process.env.NODE_TEST_CONTEXT) {
   connectDB().then(async () => {
+    await prepareTrust();
     await prepareNgoIndexes();
     await Funding.createIndexes();
     await prepareTeams();

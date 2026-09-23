@@ -1,3 +1,4 @@
+import { createNotification } from './notificationService.js';
 import Project from '../models/Project.js';
 import Application, { CONTRIBUTION_TYPE_ENUM } from '../models/Application.js';
 import Team from '../models/Team.js';
@@ -20,5 +21,6 @@ export const apply = (userId, id, data) => strictTransaction(async session => {
   const target = project.sourceProblemId ? { problemId: project.sourceProblemId } : { projectId: id };
   if (await Application.exists({ userId, $or: [{ projectId: id }, ...(project.sourceProblemId ? [{ problemId: project.sourceProblemId }] : [])] }).session(session)) fail('You have already applied.', 409);
   const [application] = await Application.create([{ userId, ...target, contributionType: data.contributionType, relevantSkills: data.relevantSkills || [], note: text(data.note ?? '', 'note', 500, false) }], { session });
+  await createNotification({ userId: project.ngoId, type: 'new_volunteer_application', title: 'New volunteer application', message: project.title, relatedProjectId: project._id, relatedUserId: userId }, { session, key: 'application:' + application._id });
   return { application };
 });

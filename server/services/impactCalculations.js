@@ -22,24 +22,24 @@ export async function lockProject(projectId, session) {
   const p = await Project.findOneAndUpdate({ _id: validId(projectId) }, { $inc: { __v: 1 } }, { new: true, session });
   if (!p) fail('Project not found.', 404); return p;
 }
-export async function refreshContributionStats(projectId, session) {
+export async function refreshContributionStats(projectId, session, notify = false) {
   const totals = await aggregateProjectContributions(projectId, session);
   const tracking = await Contribution.exists({ projectId, schemaVersion: 2, legacyNeedsReview: false, type: { $in: ['time', 'skills'] }, status: 'confirmed' }).session(session);
   const project = await Project.findById(projectId).session(session);
   project.contributionHours = totals.totalHours;
   if (tracking) project.contributionTracking = true;
   await project.save({ session });
-  await recalculateProjectFunding(projectId, session);
+  await recalculateProjectFunding(projectId, session, notify);
   if (project.status === 'completed') {
     await NGOProfile.updateOne({ userId: project.ngoId }, { $inc: { __v: 1 } }, { session });
     await recalculateNgoStats(project.ngoId, session);
   }
 }
-export async function generateImpactRecord(projectId, session = null, reconstructed = false) {
-  if (!session) return strictTransaction(async s => { await lockProject(projectId, s); return generateImpactRecord(projectId, s, reconstructed); });
+export async function generateImpactRecord(projectId, session = null, reconstructed = false, notify = false) {
+  if (!session) return strictTransaction(async s => { await lockProject(projectId, s); return generateImpactRecord(projectId, s, reconstructed, notify); });
   let project = await Project.findById(validId(projectId)).session(session);
   if (!project || project.status !== 'completed') fail('A completed project is required.', 409);
-  await refreshContributionStats(projectId, session);
+  await refreshContributionStats(projectId, session, notify);
   const existing = await ImpactRecord.findOne({ projectId }).session(session);
   if (existing) return existing;
   project = await Project.findById(projectId).session(session);

@@ -51,7 +51,7 @@ exactly where the build stands.)
 - [x] Prompt 4 — CSR Manager Dashboard
 - [x] Prompt 5 — Matching + Team Formation
 - [x] Prompt 6 — Contributions + Impact Tracking
-- [ ] Prompt 7 — Verification + Trust + Notifications
+- [x] Prompt 7 — Verification + Trust + Notifications
 - [ ] Prompt 8 — Final UI + Admin + Polish
 
 ## Known decisions already made (don't re-litigate these without reason)
@@ -386,3 +386,82 @@ exactly where the build stands.)
   are in artifacts/impact-browser/, with earlier suites in their existing directories.
   Browser review found and fixed a refresh ordering issue after material confirmation.
   Tests use isolated replica sets and temporary browser sessions, not live records.
+
+
+### Prompt 7 decisions and verification
+- Notification now stores the requested 16 types, recipient, title/message, nullable
+  related project/user IDs, read state and timestamps. Optional internal dedupeKey
+  has a per-recipient partial unique index; legacy messages remain readable.
+  notificationService.createNotification is the only insertion path. Business
+  actions pass their MongoDB session, so rollback also removes their notifications.
+- Existing application acceptance/rejection notifies the applicant; direct and
+  source-Problem project applications notify the owner NGO. Adopted Problem apply
+  routes delegate to the existing transactional Project application service.
+  Unadopted Problem applications retain their earlier behavior.
+- CSR allocations notify the NGO; actual Funding status transitions and withdrawal
+  notify CSR managers. Reconciliation has an explicit notify option; startup
+  migrations, snapshot reconstruction and demo seeding remain silent.
+- Team messages notify current members and the owner NGO, excluding the sender.
+  The existing Project transaction lock serializes a rolling 60-second throttle
+  per recipient/project/sender. Skill requests notify profiles matching the same
+  normalized partial-skill rule used by existing skill discovery.
+- Contribution creation notifies the contributor and owner NGO. Automatic and
+  reviewed confirmations notify the contributor exactly once per contribution.
+  First project completion through any existing route notifies distinct current
+  Team members, the owner NGO and active CSR funders in the completion transaction.
+- Verification status changes notify the organization. New reports notify existing
+  admin accounts only. No production admin account is created by this prompt.
+  new_matching_project and team_invitation remain reserved enum values; there is
+  no newly invented invitation flow.
+- Incomplete milestones due within 48 hours are checked on NGO dashboard and
+  unread-count requests. Reminders deduplicate by milestone ID and due date.
+  Notifications are in-app only: bell/full list poll every 30 seconds, with focus
+  and local-mutation refresh. No WebSocket, push, SMS or cron service is added.
+- /api/notifications supports newest-first bounded pagination and isRead filters,
+  unread-count, recipient-scoped read/unread, mark-all-read and deletion. The
+  /:id/read endpoint accepts isRead=false as well as its default true.
+  /notifications and the shared navbar bell reuse NotificationItem. Project links
+  use existing role routes; team-message links use authorized workspace lookup.
+- NGOProfile/CSRProfile gain verificationEvidence and review metadata. Evidence and
+  verificationNotes are excluded from ordinary queries; private evidence is read
+  through owner/admin endpoints and notes are selected explicitly only for admins.
+  Profile serialization also strips verificationNotes. Editable field allowlists
+  continue preventing self-verification and modification of review metadata.
+- Organization evidence uploads use a separate multer memory-buffer pipeline:
+  PDF/JPEG/PNG/WebP signatures, at most four files/request, 5 MB/file, 20/profile.
+  Files are stored in .local/verification-evidence outside public /uploads;
+  authenticated owner/admin downloads use attachment delivery and no-store.
+  Failed validation/database writes clean up files. Uploading sets pending review.
+- Project gains evidenceVerified and requiresAuthorityApproval; Problem and Project
+  gain isFlagged. fundingRequired > LARGE_PROJECT_THRESHOLD (default INR 50000)
+  derives approval-required on document validation and startup backfill. The
+  backfill updates only mismatched values and preserves historical timestamps. Invalid
+  threshold configuration fails initialization. No extra funding/completion gate
+  is introduced. Admin evidence review requires before and after photos; changing
+  either gallery clears evidenceVerified. Progress-photo uploads do not clear it.
+- Current organization and project trust data are exposed separately through
+  /api/projects/:id/trust, reused on cards/details and Impact Stories. Historical
+  financial/evidence snapshots are not rewritten. Organization profile badges
+  refresh after upload and within the polling interval after another session's
+  review, without overwriting in-progress profile edits.
+- Report is a new model: reporter, typed target, reason, description, status,
+  reviewer/notes and timestamps. Targets map to Problem, Project, User, NGOProfile
+  or CSRProfile; organization targets are profile IDs, not User IDs. Submission
+  validates existence and serializes a limit of ten reports/hour per account.
+  Review may atomically flag a Problem/Project only with status action_taken;
+  no automatic removal, account suspension or complex takedown engine is added.
+- /api/admin is entirely authenticated and admin-only, including unknown paths.
+  Pending verifications, organization review, project evidence review, filtered
+  pending-first report lists and report review are implemented and documented
+  in README.md. The admin UI remains Prompt 8. Report modals and organization
+  uploads appear on existing surfaces; no new public profile directory is added.
+- Verification: all 91 backend tests passed (78 existing plus 13 Prompt 7 tests),
+  including every notification trigger, role/recipient boundaries, all report
+  targets, private multipart uploads, review notes privacy, threshold boundaries,
+  concurrent message throttling, deduplication and transaction/file cleanup failures.
+  The frontend production build passed. All four pre-existing browser suites
+  passed, covering NGO/community, CSR, teams and contributions/impact workflows.
+  New trust browser checks exercise actual 30-second polling, read/unread persistence,
+  navigation, reporting, both organization uploads, admin API review, live badges
+  and desktop/mobile layouts. Artifacts are in artifacts/trust-browser/.
+  Tests use isolated databases/browser sessions rather than live demo records.

@@ -1,0 +1,12 @@
+import { Router } from 'express';
+import { authenticate } from '../middleware/auth.js';
+import { endpoint } from '../controllers/teamController.js';
+import Notification from '../models/Notification.js';
+import { listNotifications, markNotification, removeNotification, checkMilestones } from '../services/notificationService.js';
+const router = Router(); router.use(authenticate);
+router.get('/', endpoint(r => listNotifications(r.user.id, r.query)));
+router.get('/unread-count', endpoint(async r => { if (r.user.role === 'ngo') await checkMilestones(r.user.id); return { count: await Notification.countDocuments({ userId: r.user.id, isRead: false }) }; }));
+router.patch('/mark-all-read', endpoint(async r => { await Notification.updateMany({ userId: r.user.id, isRead: false }, { $set: { isRead: true } }); return {}; }));
+router.patch('/:id/read', endpoint(r => markNotification(r.user.id, r.params.id, r.body.isRead)));
+router.delete('/:id', endpoint(r => removeNotification(r.user.id, r.params.id)));
+export default router;

@@ -1,3 +1,4 @@
+import NotificationsPage from './pages/NotificationsPage';
 import ImpactStoriesPage from './pages/ImpactStoriesPage';
 import ImpactStoryPage from './pages/ImpactStoryPage';
 import TeamWorkspacePage from './pages/TeamWorkspacePage';
@@ -48,6 +49,7 @@ export const App = () => {
 
       <main className="flex-grow">
         <Routes>
+          <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
           <Route path="/teams/:id" element={<ProtectedRoute><TeamWorkspacePage /></ProtectedRoute>} />
           <Route path="/projects/:id" element={<RoleProtectedRoute allowedRoles={['community_user']}><CommunityProjectPage /></RoleProtectedRoute>} />
           <Route path="/impact-stories" element={<ProtectedRoute><ImpactStoriesPage /></ProtectedRoute>} />

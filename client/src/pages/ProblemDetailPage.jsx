@@ -1,3 +1,5 @@
+import ReportModal from '../components/ReportModal';
+import ProjectTrust from '../components/ProjectTrust';
 import ProgressSummary from '../components/ProgressSummary';
 import ContributionActions from '../components/ContributionActions';
 import React, { useEffect, useState } from 'react';
@@ -97,7 +99,7 @@ const ProblemDetailPage = () => {
               </span>
             </div>
 
-            <h1 className="text-3xl font-extrabold text-stone-900">{problem.title}</h1>
+            <h1 className="text-3xl font-extrabold text-stone-900">{problem.title}</h1><ReportModal targetType="problem" targetId={problem._id} />{problem.postedBy && <ReportModal targetType="user" targetId={problem.postedBy._id || problem.postedBy} label="Report author" />}{problem.linkedProjectId && <ProjectTrust projectId={problem.linkedProjectId} />}
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="flex items-center gap-2 rounded-2xl bg-stone-50 p-3 text-stone-700">

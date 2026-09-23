@@ -1,3 +1,4 @@
+import { createNotification } from './notificationService.js';
 import { createHash } from 'node:crypto';
 import Contribution from '../models/Contribution.js';
 import Project from '../models/Project.js';
@@ -26,7 +27,10 @@ export async function createContribution(userId, projectId, data, key) {
       if (paise(payload.moneyContributed.amount) > paise(project.fundingRequired) - paise(funding.total)) fail('Contribution exceeds the current funding gap.', 409);
     }
     const [record] = await Contribution.create([{ userId, projectId, ...payload, status: payload.type === 'materials' ? 'pending' : 'confirmed', idempotencyKey: key, requestFingerprint: fingerprint }], { session });
-    await refreshContributionStats(projectId, session);
+    await refreshContributionStats(projectId, session, true);
+    await createNotification({ userId, type: 'contribution_recorded', title: 'Contribution recorded', message: project.title, relatedProjectId: projectId }, { session, key: 'recorded:' + record._id });
+    await createNotification({ userId: project.ngoId, type: 'new_contribution', title: 'New contribution', message: project.title, relatedProjectId: projectId, relatedUserId: userId }, { session, key: 'new-contribution:' + record._id });
+    if (record.status === 'confirmed') await createNotification({ userId, type: 'contribution_confirmed', title: 'Contribution confirmed', message: project.title, relatedProjectId: projectId }, { session, key: 'confirmed:' + record._id });
     return safe(record);
   }); } catch (error) {
     if (error.code === 11000) { const existing = await Contribution.findOne({ userId, idempotencyKey: key }).select('+requestFingerprint'); if (existing) return retry(existing); }
@@ -63,8 +67,8 @@ export const reviewContribution = (userId, projectId, contributionId, data) => s
     if (!c.legacyReason && paise(c.moneyContributed.amount) > paise(p.fundingRequired) - paise(funding.total)) fail('Confirmation exceeds the current funding gap.', 409);
   }
   c.status = data.status; c.reviewedBy = userId; c.reviewedAt = new Date(); await c.save({ session });
-  // Prompt 7 notification trigger belongs after this transaction commits.
-  await refreshContributionStats(projectId, session); return safe(c);
+  if (c.status === 'confirmed') await createNotification({ userId: c.userId, type: 'contribution_confirmed', title: 'Contribution confirmed', message: p.title, relatedProjectId: projectId, relatedUserId: userId }, { session, key: 'confirmed:' + c._id });
+  await refreshContributionStats(projectId, session, true); return safe(c);
 });
 export async function contributeToLegacyProblem(userId, problemId, data, key) {
   const p = await Problem.findById(validId(problemId)).select('linkedProjectId');

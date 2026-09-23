@@ -1,3 +1,4 @@
+import VerificationEvidenceUpload from '../components/VerificationEvidenceUpload';
 import React, { useEffect, useState } from 'react';
 import * as ngoSvc from '../services/ngoService';
 import SkillsChipInput from '../components/SkillsChipInput';
@@ -214,6 +215,7 @@ const NGOProfilePage = () => {
           {saving ? 'Saving…' : 'Save Profile'}
         </button>
       </form>
+      <VerificationEvidenceUpload type="ngo" onStatus={verificationStatus => setProfile(p => p ? ({ ...p, verificationStatus }) : p)} />
     </div>
   );
 };

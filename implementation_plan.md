@@ -1,238 +1,112 @@
-﻿# Implementation Plan - Prompt 6: Contributions and Impact Tracking
+﻿# Implementation Plan — Prompt 8: Admin Panel and Final Application Polish
 
-Status: Approved by the user, implemented and verified.
+Status: Awaiting approval. Planning only; no implementation changes made for Prompt 8.
 
-## Objective and existing foundations
-Read gemini.md and brandguidelines.md. Extend the existing application with structured
-contributions, shared project progress and stable completion snapshots. Preserve auth,
-all three dashboards, scored matching, teams, simulated CSR funding and existing data.
-Prompt 5 is complete: 64 backend tests, production build and three browser suites passed.
-The prior completed plan is superseded here; its decisions remain in gemini.md.
+## Foundation and scope
 
-Current Contribution stores userId/problemId/type/note/amount, with no hours, item
-quantities, status or currency. ImpactRecord is still a metricName/value placeholder.
-NGO completion can occur through complete, status and general project-update routes;
-all must generate the same snapshot. Existing funding reconciliation counts only CSR
-allocations. Resource history contains cumulative spending, never incremental expenses.
-Community dashboard currently invents volunteer hours from applications; replace those
-impact figures with recorded data as part of this work.
+Read root gemini.md and brandguidelines.md and inspected the Prompt 7 admin APIs, current role guard, page inventory and CSR budget presentation. Prompt 7 is complete: 91 backend tests, five browser suites and the production build passed. Preserve its secured review services, private evidence storage, notifications and all Prompt 1–7 workflows. Keep the current approved teal/terracotta/off-white palette and existing technology stack. No new charting dependency, payment integration, dynamic category collection or public admin signup.
 
-## 1. Model extensions and migration
-Expand Contribution with projectId, the four requested typed payloads, status and
-existing timestamps. Preserve problemId/note/amount for legacy compatibility; never
-rename away or delete stored records. New contributions require a Project and exactly
-one nonempty payload matching type. Do not accept userId or arbitrary status from clients.
-Keep volunteer Contributions and CSR Funding as distinct models.
+The existing frontend has an admin dashboard placeholder and a role guard that renders an access-restricted view. The existing verification endpoint lists only pending profiles; report lists do not include full target previews; project evidence review has a mutation endpoint but no queue endpoint. Add these missing read APIs rather than fetching through another role's restricted dashboard endpoints. The previous completed plan is superseded; its decisions remain in gemini.md.
 
-Validate finite positive hours/amounts/quantities, bounded text/skill/item arrays and
-nonnegative estimated material value. Money is simulated INR, validated to two decimals
-and calculated in integer paise. Estimated material value is not money raised.
-Use a per-user idempotency key for new submissions, retained by the modal across retries,
-so duplicate network requests cannot inflate funding or hours.
+## 1. Admin bootstrap and additional accounts
 
-Implement an idempotent, resumable migration service and a read-only migration report.
-- Link old problemId records through Problem.linkedProjectId when available. Keep
-  unresolved historical records intact with explicit linkage/review metadata; exclude
-  them from Project totals until linked. Adoption invokes the same linkage helper.
-- Preserve original amount/note/timestamps. The old UI accepted an ambiguous INR/$
-  amount and stored no currency; do not silently relabel legacy amounts as INR.
-- Legacy records with missing hours, skills, item quantities or currency remain marked
-  for review and excluded from confirmed numeric totals. Do not infer values from notes
-  or turn an application into volunteer hours. Represent them in the user's history.
-- The owning NGO can supply missing structured details when reviewing a legacy record,
-  explicitly attest INR for an old money amount, and then confirm/reject. Restrict this
-  payload repair to flagged legacy records and retain original data for auditability.
-- Preserve unresolved pre-adoption records and reattempt linkage on adoption/startup.
-  New UI directs contributions to adopted Projects; unadopted Problems explain that
-  contribution logging becomes available after adoption. The old contribute endpoint
-  remains a compatibility adapter for linked Projects, with clear validation responses
-  for missing structured data or an unadopted target, never creating fictional Projects.
+- Add server/scripts/createAdmin.js, runnable from repository root with `node server/scripts/createAdmin.js`. Load server/.env, with shell variables taking precedence. Require ADMIN_EMAIL and ADMIN_PASSWORD; validate email and the existing password requirements, hash with bcrypt, set role=admin and isEmailVerified=true. Do not print passwords, hashes or connection secrets.
+- Connect to the configured persistent database, refusing an ephemeral fallback. If any admin already exists, exit with a clear no-op message. Never promote or overwrite an existing non-admin with a matching email. Preserve all existing users and demo data.
+- Protect simultaneous bootstrap runs with a database-enforced unique bootstrap guard on User; test separate invocations and conflicting credentials. Do not rely solely on a find-then-insert check.
+- Add POST /api/admin/create-admin behind the existing authenticate/authorize('admin') middleware. Use an allowlisted name/email/password payload, validation, hashing and duplicate-email handling. New admins are verified; no credentials return in responses. Provide this form within the admin user-management section.
+- Document the script and environment variables in README/.env.example using empty placeholders. Do not invent credentials or create an account in the user's database without supplied credentials. Public signup must continue rejecting role=admin, including forged API requests.
 
-Expand ImpactRecord with every requested field: unique projectId, beneficiary/hour/
-funding/material totals, completion-time Team member count, NGO/CSR credits, copied photo
-arrays, NGO outcomesSummary, completedAt and timestamps. Retain placeholder fields and
-use a partial unique projectId index to preserve unrelated old placeholder documents.
-Add snapshot title/description/category/location and organization display credits so
-story content and filters remain stable when live Project/profile data changes.
-Add Project.progressPercentage, outcomesSummary and completedAt for future completions.
+## 2. Suspension and user management APIs
 
-Existing completed projects receive a clearly identified historical backfill snapshot
-from available confirmed data after migration. Never invent an original completion
-instant or completion-time membership: flag reconstructed snapshots, use nullable
-unknown completion date and disclose that membership/photos reflect backfill time.
-Keep an existing ImpactRecord unchanged on migration reruns.
+- Add User.isSuspended with default false; existing absent values remain active. Keep role, suspension, password hash and verification fields server-controlled.
+- GET /api/admin/users: bounded pagination, validated role filter, escaped name/email search, newest first, safe fields only. Include existing role-profile summary fields without recomputing NGO/CSR historical totals.
+- GET /api/admin/users/:id: safe account details and the correct role-specific profile. Internal organization review notes/evidence remain available only to authorized admin responses; exclude auth secrets and refresh tokens.
+- PATCH /api/admin/users/:id/suspend and /reactivate: idempotent state transitions. Suspension revokes refresh sessions and is checked by login, refresh and authenticated request middleware so existing access tokens cannot bypass it. Reactivation permits a fresh login and does not revive revoked sessions.
+- Prevent self-suspension and suspension of the last active admin, including concurrent requests, to avoid locking out administration. Preserve normal login failure behavior and show a clear suspended-account message after valid credentials are established.
 
-## 2. Shared calculation services
-Create server/services/impactCalculations.js with reusable, directly testable functions.
-Accept an optional session so callers can include calculations in their transaction.
-Use one shared confirmed-contribution aggregation implementation, not per-route math.
+## 3. Accurate platform statistics and categories
 
-- calculateProjectProgress(projectId): completed milestones / all milestones * 100,
-  rounded consistently; zero if no milestones. Save after creation, milestone edits
-  and status updates; backfill old projects. Completed status does not invent milestones
-  or force 100% when the recorded ratio differs.
-- aggregateProjectFunding(projectId): sum confirmed, linked volunteer money plus
-  non-withdrawn CSR allocations; return fromVolunteers/fromCSR/total using paise.
-- aggregateProjectContributions(projectId): confirmed time hours, skill hours, combined
-  hours, money, skill breakdown, material item quantities and material estimated value.
-  Normalize item names for aggregation but preserve readable labels. Show item-specific
-  quantities; do not imply that unlike items share physical units.
-- generateImpactRecord(projectId): create one stable snapshot after completed status,
-  reusing the above functions, Team.members.length, Project photos/spending, fundedBy,
-  beneficiaries and NGO-written outcomes. Repeated completion returns the original.
-- calculateUserImpact(userId): sum that user's confirmed structured contributions,
-  distinct linked/completed projects, skills and item quantities. Return a paginated
-  dated contribution timeline and separate pending/rejected/legacy-review history.
-  Preserve compatible response keys while removing fabricated dashboard hours/impact.
+GET /api/admin/stats/overview aggregates the database rather than fixture values:
 
-Retain existing manual Project.volunteerHours history separately from contribution
-hours. Do not add the two sources: they may describe the same work. Store a derived
-contribution-hours total for structured records; existing NGO statistics reuse the
-existing recalculateNgoStats function, preferring structured hours for projects using
-this system and preserving labelled legacy manual hours for untouched old projects.
-ImpactRecord.totalVolunteerHours always uses confirmed Contribution hours only.
-Once structured contribution tracking is in use, its hours are read-only in NGO editing;
-preserve the original manual value as legacy evidence rather than overwriting it.
+- User totals by role and suspension state; Problem and Project totals by status.
+- NGO/CSR verification totals including verified, pending and rejected.
+- Active CSR Funding allocations (exclude withdrawn); separately show confirmed volunteer donations and combined simulated funding, avoiding double counting Project.fundingReceived.
+- Volunteer hours from confirmed structured time/skills contributions, counted once per session; do not add project mirrors or ImpactRecord snapshots to these totals. Clearly distinguish any retained legacy/manual values rather than silently treating them as structured contributions.
+- Completed project count from Project status; beneficiaries reached from structured completion ImpactRecords, excluding placeholder metric rows. Display the snapshot basis clearly.
+- Pending verification/report counts for quick links.
 
-## 3. Unified funding without double counting
-Extend recalculateProjectFunding as the single transactional reconciliation path.
-Project.fundingReceived becomes confirmed volunteer money + active CSR allocations.
-Project.fundedBy remains distinct CSR funder IDs only. CSR portfolio totals continue
-to count only that company's Funding records; volunteer money is not CSR allocation.
+GET /api/admin/stats/growth returns the last 12 weekly or monthly periods for new Users and Projects. Validate the interval, use documented UTC boundaries (Monday for weeks), and fill empty periods with zero. Use a small accessible chart/table component based on existing presentation patterns; no library addition.
 
-Preserve the approved CSR spending rule: attribute cumulative Project.fundingSpent to
-active CSR allocations oldest first, then attribute the remaining project spending to
-the volunteer money pool up to its confirmed total. Any excess stays explicitly
-unattributed. Expose this breakdown without inventing per-volunteer spending records.
-Never sum cumulative resource snapshots or charge full project spending to every funder.
+GET /api/admin/categories derives its list from PROBLEM_CATEGORIES and returns separate Problem/Project usage counts plus their combined count. Preserve the enum as the schema validation source. Explain that combined counts count documents, including an adopted Problem and its linked Project separately. Add the future enum-to-reference migration note in code and an accessible disabled Add Category control with explanatory text/tooltip in the UI.
 
-Both new CSR allocations and volunteer money submissions check the unified funding gap
-under the same Project transaction lock. Pending confirmation checks the remaining gap
-again. Existing migrated records are preserved even if historical totals exceed today's
-goal; show excess transparently and prevent additional funding instead of deleting data.
-Keep existing CSR withdrawal eligibility and idempotency behavior. Reconcile on donation,
-confirmation/rejection, CSR allocation/withdrawal, spending updates and completion.
+## 4. Complete the admin read/review contracts
 
-The request describes replacing manual fundingSpent updates with the funding breakdown.
-Funding raised cannot determine money spent. Replace the Resources tab's primary display
-with shared read-only totals and retain a clearly separated existing receipt-backed
-expense-recording form/API as the source of fundingSpent. Do not remove spending history
-or manufacture spending from donations; no new expense ledger is introduced here.
-Similarly, show contributed materials separately from existing manual received inventory;
-never sum both blindly or assume each donation maps to an existing materialsNeeded row.
+Reuse Prompt 7 review, reporting, evidence-download and notification services.
 
-## 4. Completion, stable evidence and statistics
-Hook every existing completion path into generateImpactRecord within the same strict
-transaction as Project/Problem updates, reconciliation and profile recalculation.
-Reuse recalculateNgoStats and recalculateCsrStats (through shared reconciliation as
-appropriate); refactor their call boundaries to avoid circular service dependencies,
-without copying their aggregation math. Keep existing ownership/status/photo/beneficiary
-requirements, replica-set requirement and serialization of cross-project profile totals.
+- Keep GET /api/admin/verifications/pending compatible; add GET /api/admin/verifications with a validated pending/verified/rejected filter and pagination for history tabs. History shows current status and existing last-review metadata; do not invent an audit trail the schema does not store.
+- Require nonempty notes for approve/reject actions on both frontend and API; keep private notes out of organization/public responses. Ensure resulting notifications and current badges refresh in all relevant views.
+- Add GET /api/admin/reports/:id with safe reporter details and a typed inline target preview fetched from the correct collection. Represent a deleted target explicitly. Never expose password/token fields when the target is a User. Existing report lists remain filterable and pending-first; existing review mutation handles notes and optional supported flagging.
+- Add GET /api/admin/projects/pending-verification with pagination for requiresAuthorityApproval=true and evidenceVerified=false, including before/after photos, project budget and managing NGO summary. Reuse the existing verify-evidence mutation; make missing evidence clear and disable the action until prerequisites exist.
+- All additions live under the existing admin-only router. Verify 401 without authentication and 403 for each non-admin role, including unknown admin child paths.
 
-Snapshot creation uses a unique projectId and is idempotent under concurrent completion.
-Failure at any step rolls back completion and derived writes together. Do not regenerate
-photos, totals or volunteer count after later Project/team edits. Live progress/report
-figures may change; distinguish current totals from the recorded completion snapshot.
+## 5. Admin frontend and reusable components
 
-New submissions to completed Projects are rejected. Existing pending contributions may
-still be reviewed: confirmed totals and live profile/report data update, while the
-completion snapshot explicitly remains as recorded then. A late confirmation never
-silently rewrites an Impact Story. Confirmation/rejection is a pending-to-final decision;
-same-decision retries are safe and conflicting repeated decisions return a conflict.
+Replace the placeholder with an admin-only nested layout under /admin/*, with distinct sidebar/control-panel organization while sharing the existing brand tokens. Use a compact accessible menu on mobile. Build:
 
-## 5. APIs and access control
-Keep controllers thin; put validation, access checks and mutations in services.
-Register specific progress/contribution/impact routes alongside existing project routes
-without weakening community-only detail/apply or NGO-only acceptance guards.
+1. /admin/dashboard — overview cards, 12-period growth chart/table and counted quick links.
+2. /admin/verifications — status tabs, organization summaries, authenticated evidence downloads and approve/reject forms with required notes.
+3. /admin/reports — filters, expandable inline target/reporter context, review notes, status actions and supported flagging.
+4. /admin/users — search/filter/pagination, role summaries, detail view, confirmed suspend/reactivate actions and admin-account creation form. Add /admin/users/:id for directly addressable details if useful.
+5. /admin/categories — enum usage overview and explained disabled Add Category control.
+6. /admin/project-verification — evidence queue, before/after review and confirmation feedback.
 
-- POST /api/projects/:id/contributions: authenticated community users submit their own
-  contribution. Time/skills require current Team membership; money/material support may
-  come from any community user. Time/skills/money auto-confirm; materials default pending
-  so the NGO can verify delivery. Explain the state in the modal and response.
-- GET /api/projects/:id/contributions: bounded pagination, optional status/type filters;
-  managing NGO or current Team members only. Return useful display names, not private
-  email/contact/auth data. A nonmember donor views only their own history via My Impact.
-- PATCH /api/projects/:id/contributions/:contributionId/confirm: managing NGO only;
-  explicit confirmed/rejected decision and legacy-repair payload only when applicable.
-- GET /api/projects/:id/progress-summary: any authenticated role; one shared identity-free
-  response with progress/milestones, confirmed contribution totals, unified funding,
-  required/collected/spent/remaining, gap/excess, simulation labels and snapshot link.
-- GET /api/projects/:id/impact-record: any authenticated role; completed snapshot or404.
-- GET /api/impact-records: authenticated, paginated, category/location filtered completed
-  stories only; public organization credits and aggregate figures, no donor identities.
-- GET /api/users/me/impact: current community user's complete impact/history only.
+Reusable components: AdminStatCard, AdminNavSidebar, VerificationReviewCard, ReportReviewCard, UserTableRow and SimpleGrowthChart. User/category tables become readable cards at small widths. Private documents use authenticated blob downloads, not unprotected browser links. Admin report notifications should link to the new report review area.
 
-Use Project IDs for /impact-stories/:id and link to the project's impact-record endpoint.
-New read surfaces remain behind auth for all roles; individual contribution lists have
-stricter membership/ownership checks on every request. Do not add notifications yet.
+Guard the entire /admin/* subtree, including unmatched child paths. Non-admin navigation renders an explicit 403 Forbidden screen without mounting admin content or fetching its data. Because this is a client-rendered Vite SPA, the document request itself remains an HTML response; actual API access returns HTTP 403. Do not claim that a React route can independently change the hosting server's HTTP status.
 
-## 6. Frontend and design
-Build ProgressSummary, BeforeAfterComparison, ContributionTypeIcon, ImpactStatCallout
-and PendingContributionRow, reusing the current React/Tailwind/Router component patterns.
+## 6. Full-application polish audit
 
-Use the same progress-summary API/component in community Project detail, adopted Problem
-detail, NGO overview/resources and CSR evaluation/monitoring/report views. Refresh after
-contributions, confirmations, milestone changes and funding/resource actions. Preserve
-CSR-specific allocation cards beside the shared project totals.
+Create a reviewable audit checklist in docs/prompt8-polish-audit.md covering each active routed page, its role, 375px layout, loading/empty/error/retry behavior, forms/feedback, keyboard/labels and verification result. Inventory routes from App.jsx, not filenames alone, so aliases/shared dashboards are covered without polishing unused placeholder files.
 
-Expand ContributeModal to all four typed forms with field validation, status explanation,
-INR simulation notice, retained retry key and disabled duplicate submit. Keep form values
-on errors. Add time/skill logging entry points for members and donation actions for
-community users. Show pending submissions as pending, never as confirmed impact.
+Audit and fix these areas:
 
-My Impact gains real hours/money/materials/skills totals and a dated, paginated timeline.
-Update community dashboard hours and related inferred impact displays to use recorded
-values; remove unsupported derived XP/karma claims rather than inventing an impact metric.
-NGO Resources adds pending review rows and legacy-review explanations. Add an NGO-written
-outcomes summary to project editing/completion preparation. CSR Reports displays unified
-money raised beside the caller's allocation share and the stable completion snapshot.
+- Public/auth pages: landing, signup, login, email verification, forgot/reset password; input labels, validation errors, submission feedback, focus and keyboard behavior.
+- Community: dashboard, Discover, Problem detail/post, Project detail, My Applications, Saved, profile and My Impact.
+- NGO: dashboard/discovery, My Projects, create/detail/edit, applicant review, resources/photos, team access, profile/evidence uploads.
+- CSR: dashboard/discovery, project evaluation, portfolio, monitor, reports, budget and company profile/evidence uploads.
+- Shared: Team Workspace, notifications, Impact Stories/list, contribution/funding/report dialogs, navbar/footer, role guards and all new admin pages.
 
-/impact-stories: authenticated cross-role grid with category/location filters, after
-images, beneficiary/hour/funding/material statistics, pagination and empty/error states.
-/impact-stories/:id: spacious teal/off-white story layout, large side-by-side before/after
-photos, progression photos, prominent stats and the narrative sequence Problem -> People
--> Work -> Resources -> Result -> Evidence -> Impact. Credit managing NGO and CSR companies;
-show volunteer count without contributor identities. Use actual uploaded evidence and
-NGO text, never fabricated photos/outcomes. Clearly label simulated money and reconstructed
-legacy snapshots. Add navigation links without mixing role-specific dashboards.
+For every list/grid, use a clear loading indicator/skeleton, the existing EmptyState only after a successful empty response, and a visible error with a working Retry button. Reset pagination appropriately after filters; prevent stale responses and distinguish empty filtered results from failures. Keep already loaded data visible during background polling where appropriate.
 
-Support mobile, keyboard navigation, readable contrast, accessible dialogs/images and
-loading/error/empty states. No new badges, exports, payment gateway, sockets or push.
+Review every form for associated labels, required/invalid feedback, disabled busy states, success confirmation and error recovery. Preserve entered data on failures. Ensure modal keyboard focus, Escape and return focus behavior, meaningful image alt text and accessible names for icon buttons.
 
-## 7. Verification and delivery
-Run the current 64 tests and frontend build before changes. Tests/migrations/browser
-fixtures use isolated replica sets, never the user's live database.
-- Test each typed payload and rejection of mismatched/multiple payloads, invalid numeric
-  values, forged owner/status, duplicate retries and unauthorized writes/list reads.
-- Test confirmed-only aggregates, skill hours, normalized materials, money precision,
-  multi-project personal impact and separation of individual vs CSR figures.
-- Test mixed funding, withdrawal, expense corrections, simultaneous volunteer/CSR
-  donations near the gap, confirmation races and rollback after injected failures.
-- Test migration reruns, linked/unadopted Problems, adoption-time linkage, incomplete
-  historical payloads/currency, legacy review and absence of invented quantities.
-- Test progress at zero/partial/all milestones and when a milestone is unchecked.
-- Test all completion paths, one snapshot under concurrent/repeated completion, stable
-  photos/counts/totals after edits/removal/late review, and existing profile functions.
-- Test legacy completed-project reconstruction disclosures, story filters/pagination,
-  auth and contributor privacy for community, NGO, CSR, unrelated and removed users.
-- Assert identical progress-summary data across three authenticated roles.
-- Browser-test all four contribution forms, NGO pending review, real My Impact timeline,
-  shared totals in all three dashboards, completion and desktop/mobile Impact Stories.
-- Rerun existing NGO/community, CSR funding and two-session team workspace browser suites;
-  run the full backend suite and production build, inspect screenshots/runtime errors.
+Use shared StatusBadge, UrgencyBadge, VerificationBadge and status-pipeline semantics consistently; replace drifted local representations rather than changing brandguidelines.md. Check button/badge text contrast and adjust shades within the approved palette if needed. Preserve typography/layout except concrete usability fixes. Correct stale build-stage text and inaccurate currency copy in shared UI where found.
 
-After checks pass, update gemini.md's Prompt 6 checkbox and known decisions, README and
-this plan with actual verification. Document migration, currency, snapshot semantics,
-funding attribution, shared progress APIs and Prompt 7 confirmation/completion hooks.
-Prompt 8 platform statistics must reuse these aggregations rather than sum snapshots
-and live contributions together.
+Verify role navigation against existing routes. Admin users get admin navigation; community, NGO and CSR users retain their own flows. Keep shared notifications and impact navigation usable on mobile. Fix actual overflow sources rather than hiding horizontal overflow globally.
 
-## Execution status
-User approval was received before application implementation. Prompt 6 is complete:
-structured contributions, migration/review, unified funding/progress calculations,
-immutable completion snapshots and all requested frontend pages/components are built.
-All 78 backend tests passed. The 14-test impact suite passed again after the final
-snapshot funding-goal field. The production frontend build and all four browser suites
-(impact, NGO/community, CSR and team workspace) passed. Desktop/mobile Impact Story
-screenshots are in artifacts/impact-browser/. gemini.md and README mark Prompt 6 complete
-and record the final data, migration, privacy and future-notification decisions.
+## 7. Verification and regression gates
+
+Use isolated MongoDB replica sets and temporary browser profiles. Do not seed, suspend or otherwise mutate the user's live accounts for testing.
+
+Backend tests:
+
+- Bootstrap first run, repeat run, concurrent runs, invalid/missing credentials, existing-admin no-op and non-admin email collision. Test admin creation endpoint authorization and ensure public signup rejects admin.
+- Spot-check at least three overview figures against fixture records and independent raw database calculations; also cover withdrawn funding, pending contributions, distinct hours, completed snapshots and zero-filled growth boundaries.
+- Exercise history filters, report target previews for all five target types, deleted targets, evidence queue, required review notes and categories/counts.
+- Suspension blocks login, token refresh and an already-issued access token; reactivation restores login. Test self/last-admin protection and concurrency.
+- Retest all existing Prompt 1–7 backend suites and authorization boundaries.
+
+Browser checks:
+
+- Real admin login, all six pages, account detail/creation, review documents, approve/reject and cross-session badge updates, report context/actions, evidence review and suspension/reactivation.
+- Directly visit every /admin route as each non-admin role and assert the 403 view with no admin content leakage.
+- Exercise each routed list/grid with delayed requests, genuinely empty data and injected server failures followed by successful Retry. Record results in the polish audit.
+- Test all four dashboards and key pages at 375px; inspect screenshots for overlap and horizontal overflow. Keyboard-check navigation, dialogs, labels and action feedback; calculate contrast for shared token/badge combinations.
+- Explicitly rerun signup/login for community/NGO/CSR, posting, adoption, CSR allocation, team messaging, all contribution forms, completion and notifications. Reuse and extend the five existing browser suites rather than replacing them with only admin tests.
+- Run production frontend build and review the final diff for unintended data, authentication or branding changes.
+
+## 8. Completion documentation
+
+After implementation and required checks pass, update README with admin setup, endpoint contracts, aggregate definitions and operating instructions. Mark Prompt 8 complete in gemini.md, retain prior build history, and add a developer-oriented Application Summary covering the three participant roles plus administrators, Discover → Match → Contribute → Track Impact, auth/role security, matching/teams, simulated finance and impact, private verification/reporting, notifications, stack and local database requirements. Document remaining scope boundaries honestly: simulated payments, polling, enum categories, and current-status verification history.
+
+Do not mark all eight prompts complete until the implementation and verification work is finished.

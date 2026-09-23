@@ -1,3 +1,4 @@
+import { apply as applyToProject } from '../services/communityProjectService.js';
 import { contributeToLegacyProblem } from '../services/contributionService.js';
 import { endpoint } from '../controllers/teamController.js';
 import { Router } from 'express';
@@ -135,6 +136,7 @@ router.post('/:id/apply', authenticate, authorize('community_user'), async (req,
     const problem = await Problem.findById(req.params.id);
     if (!problem) return res.status(404).json({ success: false, message: 'Problem not found.' });
 
+    if (problem.linkedProjectId) return res.status(201).json({ success: true, message: 'Application submitted.', ...await applyToProject(req.user.id, String(problem.linkedProjectId), req.body) });
     const existing = await Application.findOne({ userId: req.user._id, problemId: problem._id });
     if (existing) {
       return res.status(409).json({ success: false, message: 'You have already applied to this problem.' });

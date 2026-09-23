@@ -1,3 +1,6 @@
+import { createNotification } from './notificationService.js';
+import Notification from '../models/Notification.js';
+import { normalize, distinct } from './matchingUtils.js';
 import mongoose from 'mongoose';
 import Team from '../models/Team.js';
 import Project from '../models/Project.js';
@@ -97,7 +100,7 @@ export const mutate = (userId, teamId, operation, target, data = {}) => strictTr
   if (!initial) fail('Team not found.', 404);
   // Same lock order as applicant acceptance and funding; recheck access after locking.
   await Project.updateOne({ _id: initial.projectId }, { $inc: { __v: 1 } }, { session });
-  const { team, owner, coordinator } = await access(userId, teamId, session);
+  const { team, project, owner, coordinator } = await access(userId, teamId, session);
   if (operation === 'role' || operation === 'meeting') {
     if (!coordinator) fail('Only the managing NGO or a Coordinator can do this.', 403);
   }
@@ -117,6 +120,12 @@ export const mutate = (userId, teamId, operation, target, data = {}) => strictTr
     // Polling-based, not real-time. Prompt 7 can hook into committed messages.
     const content = text(data.content, 'message', 4000);
     await Team.updateOne({ _id: team._id }, { $push: { messages: { _id: new mongoose.Types.ObjectId(), senderId: userId, content, sentAt: new Date() } } }, { session, runValidators: true });
+    // Project write lock serializes this rolling 60-second throttle, including concurrent sends.
+    const recipients = [...new Set([...team.members.map(m => String(m.userId)), String(project.ngoId)])].filter(id => id !== String(userId));
+    for (const recipient of recipients) {
+      const recent = await Notification.exists({ userId: recipient, type: 'new_team_message', relatedProjectId: team.projectId, relatedUserId: userId, createdAt: { $gt: new Date(Date.now() - 60000) } }).session(session);
+      if (!recent) await createNotification({ userId: recipient, type: 'new_team_message', title: 'New team message', message: project.title + ': ' + content.slice(0, 300), relatedProjectId: team.projectId, relatedUserId: userId }, { session });
+    }
     return { posted: true };
   } else {
     let task;
@@ -150,5 +159,8 @@ export const postSkillRequest = (userId, projectId, data) => strictTransaction(a
   if (typeof data.hoursNeeded !== 'number' || !Number.isFinite(data.hoursNeeded) || data.hoursNeeded < 0.1 || data.hoursNeeded > 100000) fail('Hours must be between 0.1 and 100000.');
   project.skillRequests.push({ skillNeeded: text(data.skillNeeded, 'skill', 100), hoursNeeded: data.hoursNeeded, description: text(data.description, 'description') });
   await project.save({ session });
-  return project.skillRequests.at(-1);
+  const request = project.skillRequests.at(-1), skill = normalize(request.skillNeeded);
+  const profiles = await CommunityUserProfile.find().select('userId skills').session(session);
+  for (const profile of profiles) if (distinct(profile.skills).some(s => s.includes(skill) || skill.includes(s))) await createNotification({ userId: profile.userId, type: 'skill_request_match', title: 'Your skills could help', message: project.title + ': ' + request.skillNeeded, relatedProjectId: project._id, relatedUserId: userId }, { session, key: 'skill:' + request._id });
+  return request;
 });

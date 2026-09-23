@@ -1,3 +1,4 @@
+import { createNotification } from './notificationService.js';
 import { aggregateProjectFunding } from './contributionAggregates.js';
 import mongoose from 'mongoose';
 import Funding from '../models/Funding.js';
@@ -136,7 +137,7 @@ export async function recalculateCsrStats(userId, session) {
     session
   });
 }
-export async function recalculateProjectFunding(projectId, session) {
+export async function recalculateProjectFunding(projectId, session, notify = false) {
   // All callers must hold a write lock on this Project within the same transaction.
   const project = await Project.findById(projectId).session(session);
   const records = await Funding.find({
@@ -153,13 +154,13 @@ export async function recalculateProjectFunding(projectId, session) {
   const totalSpent = paise(latest?.fundingSpent ?? project.fundingSpent ?? 0);
   let remainingSpent = totalSpent;
   for (const f of active) {
+    const previousStatus = f.status;
     const attributed = Math.min(remainingSpent, paise(f.amountAllocated));
     f.amountSpentSoFar = attributed / 100;
     remainingSpent -= attributed;
     f.status = project.status === 'completed' ? 'completed' : project.status === 'in_progress' || attributed > 0 ? 'in_progress' : 'allocated';
-    await f.save({
-      session
-    });
+    await f.save({ session });
+    if (notify && previousStatus !== f.status) await createNotification({ userId: f.csrUserId, type: 'project_update', title: 'Funding status updated', message: project.title + ': ' + f.status.replaceAll('_', ' '), relatedProjectId: projectId }, { session });
   }
   project.volunteerFundingSpent = Math.min(remainingSpent, paise(unified.fromVolunteers)) / 100;
   project.unattributedSpent = Math.max(0, remainingSpent - paise(unified.fromVolunteers)) / 100;
@@ -229,7 +230,8 @@ export async function allocateFunding(userId, projectId, data, key) {
       }], {
         session
       });
-      await recalculateProjectFunding(projectId, session);
+      await recalculateProjectFunding(projectId, session, true);
+      await createNotification({ userId: project.ngoId, type: 'csr_interest', title: 'CSR funding allocated', message: project.title, relatedProjectId: projectId, relatedUserId: userId }, { session, key: 'funding:' + funding._id });
       return Funding.findById(funding._id).session(session);
     });
   } catch (error) {
@@ -256,6 +258,7 @@ export const withdrawFunding = (userId, fundingId) => strictTransaction(async se
   await current.save({
     session
   });
-  await recalculateProjectFunding(current.projectId, session);
+  await recalculateProjectFunding(current.projectId, session, true);
+  await createNotification({ userId, type: 'project_update', title: 'Allocation withdrawn', message: 'Your unspent allocation has been withdrawn.', relatedProjectId: current.projectId }, { session, key: 'withdrawn:' + current._id });
   return current;
 });

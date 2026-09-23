@@ -1,3 +1,4 @@
+import VerificationEvidenceUpload from '../../components/VerificationEvidenceUpload';
 import React, { useEffect, useState } from 'react';
 import * as csr from '../../services/csrService';
 import VerificationBadge from '../../components/VerificationBadge';
@@ -42,5 +43,5 @@ export default function CSRProfilePage() {
       }))} placeholder="Add a category and press Enter" /><p className="text-sm text-stone-500">Categories: {CATEGORIES.join(', ')}. Existing signup focus labels are also supported.</p><label className="block">Company budget range<select className={inputClass} value={form.budgetRange} onChange={e => setForm(f => ({
           ...f,
           budgetRange: e.target.value
-        }))}><option value="">Not set</option>{form.budgetRange && !ranges.includes(form.budgetRange) && <option value={form.budgetRange}>{form.budgetRange} (existing value)</option>}{ranges.map(r => <option key={r}>{r}</option>)}</select></label><p className="text-sm text-stone-600">Project allocations use INR. Legacy dollar ranges are preserved and are not converted automatically for recommendations.</p>{saved && <p role="status" className="text-brand-700">Company profile saved.</p>}<button disabled={busy} className="bg-brand-600 text-white px-5 py-3 rounded-xl disabled:opacity-50">{busy ? 'Saving...' : 'Save company profile'}</button></form>}</Page>;
+        }))}><option value="">Not set</option>{form.budgetRange && !ranges.includes(form.budgetRange) && <option value={form.budgetRange}>{form.budgetRange} (existing value)</option>}{ranges.map(r => <option key={r}>{r}</option>)}</select></label><p className="text-sm text-stone-600">Project allocations use INR. Legacy dollar ranges are preserved and are not converted automatically for recommendations.</p>{saved && <p role="status" className="text-brand-700">Company profile saved.</p>}<button disabled={busy} className="bg-brand-600 text-white px-5 py-3 rounded-xl disabled:opacity-50">{busy ? 'Saving...' : 'Save company profile'}</button></form>}<VerificationEvidenceUpload type="csr" onStatus={verificationStatus => setProfile(p => p ? ({ ...p, verificationStatus }) : p)} /></Page>;
 }

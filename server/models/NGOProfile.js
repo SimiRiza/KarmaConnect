@@ -1,7 +1,9 @@
+import { verificationFields } from '../utils/verificationFields.js';
 import mongoose from 'mongoose';
 
 const ngoProfileSchema = new mongoose.Schema(
   {
+    ...verificationFields,
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -92,6 +94,7 @@ const ngoProfileSchema = new mongoose.Schema(
     toJSON: {
       transform: (doc, ret) => {
         delete ret.__v;
+        delete ret.verificationNotes;
         return ret;
       }
     }

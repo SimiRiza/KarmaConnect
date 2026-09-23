@@ -1,3 +1,4 @@
+import { largeProjectThreshold } from '../utils/verificationFields.js';
 import mongoose from 'mongoose';
 import { PROBLEM_CATEGORIES, PROBLEM_STATUSES } from './Problem.js';
 
@@ -55,6 +56,9 @@ const milestoneSchema = new mongoose.Schema(
 
 const projectSchema = new mongoose.Schema(
   {
+    isFlagged: { type: Boolean, default: false },
+    evidenceVerified: { type: Boolean, default: false },
+    requiresAuthorityApproval: { type: Boolean, default: false },
     progressPercentage: { type: Number, default: 0, min: 0, max: 100 },
     outcomesSummary: { type: String, default: '', maxlength: 4000 },
     completedAt: { type: Date, default: null },
@@ -208,6 +212,7 @@ const projectSchema = new mongoose.Schema(
   }
 );
 
+projectSchema.pre('validate', function () { this.requiresAuthorityApproval = this.fundingRequired > largeProjectThreshold(); });
 // Indexes
 projectSchema.index({ ngoId: 1, status: 1 });
 projectSchema.index({ sourceProblemId: 1 }, { name: 'unique_source_problem', unique: true, partialFilterExpression: { sourceProblemId: { $type: 'objectId' } } });

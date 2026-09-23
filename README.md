@@ -400,3 +400,71 @@ From client: npm.cmd run build.
 
 Notifications, new verification badges, exports and real payment processing remain
 outside this prompt. See gemini.md for aggregation and future notification boundaries.
+
+## Prompt 7: verification, reports and notifications
+
+Notifications are stored in MongoDB and delivered in-app only. The shared navbar
+bell polls every 30 seconds; /notifications supports pagination, read/unread
+filters, deletion and marking all read. No push, SMS or WebSocket delivery is used.
+Role-appropriate project links preserve existing dashboard permissions.
+
+Events include application review/new applications, CSR allocations and funding
+status changes, team messages, skill matches, recorded/confirmed contributions,
+project completion and verification review. New reports notify existing admins.
+Team messages use a rolling 60-second throttle per recipient/project/sender.
+Incomplete milestones due in the next 48 hours are checked when the NGO dashboard
+or bell loads; each milestone/due-date combination produces one reminder.
+Transactional writes and event keys protect retries and rollbacks. Startup
+backfills and demo seeding do not broadcast historical notifications.
+
+Organizations upload PDF/JPEG/PNG/WebP evidence from their profile pages: up to
+4 files per request, 5 MB per file, 20 files per profile. Files have checked content
+signatures and live under .local/verification-evidence, outside public uploads.
+Downloads require an authenticated owner or admin; URLs alone do not grant access.
+New evidence sets verification to pending. Internal review notes never appear in
+organization or public profile responses. Failed requests clean up uploaded files.
+
+LARGE_PROJECT_THRESHOLD defaults to 50000 INR. A larger fundingRequired sets
+requiresAuthorityApproval; the flag is recalculated for existing projects on
+startup and on budget edits. It signals evidence review, without adding a new
+funding/completion gate. Admin-reviewed before/after evidence receives a badge;
+changing either gallery clears it. Trust badges show current organization/project
+verification alongside unchanged historical impact totals. Reports can flag
+problems/projects for review but never automatically remove them.
+
+### API contracts for the Prompt 8 admin UI
+
+All paths below are relative to /api. List pagination uses page and limit
+(default 20, maximum 50). IDs must be valid for their specific target collection.
+
+| Method and path | Body / behavior |
+| --- | --- |
+| GET /notifications | Optional isRead=true or false; newest first |
+| GET /notifications/unread-count | Recipient's unread count |
+| PATCH /notifications/:id/read | Optional isRead boolean (default true; false marks unread) |
+| PATCH /notifications/mark-all-read | Recipient only |
+| DELETE /notifications/:id | Recipient only |
+| GET/POST /ngo/me/verification-evidence | NGO's evidence; POST multipart documents plus type |
+| GET/POST /csr/me/verification-evidence | CSR equivalent |
+| GET /verification-evidence/:type/:id/:filename | Private authenticated download |
+| GET /projects/:id/trust | Public trust fields for authenticated users |
+| POST /reports | targetType, targetId, reason, description; maximum 10/hour per account |
+| GET /admin/verifications/pending | Pending organization profiles with evidence and internal notes |
+| PATCH /admin/verifications/:profileType/:profileId | profileType=ngo/csr; verificationStatus=verified/rejected, verificationNotes |
+| PATCH /admin/projects/:id/verify-evidence | Mark existing before/after evidence reviewed |
+| GET /admin/reports | Optional status/targetType; pending first, then newest |
+| PATCH /admin/reports/:id | status, reviewNotes, optional flagTarget=true for action_taken on problem/project |
+
+Evidence type is registration_doc, reference_letter or other. Report targetType
+is problem, project, user, ngo or csr_profile; ngo and csr_profile target profile
+IDs, not account IDs. Report reason is fake_problem, fake_project,
+misleading_information, suspicious_activity, inappropriate_content or other.
+Report status is pending, reviewed, action_taken or dismissed.
+
+All /admin paths require the admin role; no admin UI or self-service admin account
+creation is introduced. Notification enum values new_matching_project and
+team_invitation are reserved for future flows; no invitation workflow is invented.
+
+Run backend checks with npm run test:server. The new isolated browser check is
+node scripts/verifyTrustBrowser.mjs from the server directory. It exercises
+real polling, reports, evidence uploads, admin API review, badges and mobile UI.

@@ -1,7 +1,9 @@
+import { verificationFields } from '../utils/verificationFields.js';
 import mongoose from 'mongoose';
 
 const csrProfileSchema = new mongoose.Schema(
   {
+    ...verificationFields,
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -55,6 +57,7 @@ const csrProfileSchema = new mongoose.Schema(
     toJSON: {
       transform: (doc, ret) => {
         delete ret.__v;
+        delete ret.verificationNotes;
         return ret;
       }
     }

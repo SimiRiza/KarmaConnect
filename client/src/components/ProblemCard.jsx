@@ -1,3 +1,4 @@
+import ProjectTrust from './ProjectTrust';
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { MapPin, Bookmark, BookmarkCheck, ArrowRight } from 'lucide-react';
@@ -51,6 +52,7 @@ export const ProblemCard = ({ problem, saved = false, onToggleSave, matchScore, 
             <h3 className="line-clamp-2 text-lg font-bold text-stone-900 group-hover:text-brand-700 transition">
               {problem.title}
             </h3>
+            {problem.linkedProjectId && <ProjectTrust projectId={problem.linkedProjectId} compact />}
             <div className="mt-2 flex items-center gap-1.5 text-sm text-stone-600">
               <MapPin className="h-4 w-4 text-brand-600 shrink-0" />
               <span className="truncate">{locationText}</span>

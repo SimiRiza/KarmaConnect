@@ -1,3 +1,6 @@
+import { createNotification } from './notificationService.js';
+import Team from '../models/Team.js';
+import { checkMilestones } from './notificationService.js';
 import { milestoneProgress, generateImpactRecord, lockProject } from './impactCalculations.js';
 import { migrateContributionRecords } from './impactMigration.js';
 export { recalculateNgoStats } from './ngoStats.js';
@@ -45,6 +48,7 @@ const verified = async (ngoId, session = null) => {
 };
 const applyFields = (project, data) => {
   if (!data || typeof data !== 'object' || Array.isArray(data)) fail('Invalid project data.');
+  if (['evidenceVerified', 'requiresAuthorityApproval', 'isFlagged'].some(k => data[k] !== undefined)) fail('Trust fields are administrator-controlled.');
   for (const key of fields) {
     if (data[key] === undefined) continue;
     if (key === 'volunteerHours' && project.contributionTracking) { if (data[key] !== project.volunteerHours) fail('Structured contribution hours are read-only.'); continue; }
@@ -246,10 +250,16 @@ export const updateProject = (ngoId, projectId, data) => strictTransaction(async
   });
   if (project.status === 'completed') {
     // Snapshot generation refreshes the existing NGO/CSR statistics once, in this transaction.
-    await generateImpactRecord(project._id, session, !project.completedAt);
+    await generateImpactRecord(project._id, session, !project.completedAt, true);
+    if (!wasCompleted) {
+      const team = await Team.findOne({ projectId: project._id }).session(session);
+      const refreshed = await Project.findById(project._id).session(session);
+      const recipients = [...new Set([String(ngoId), ...(team?.members || []).map(m => String(m.userId)), ...refreshed.fundedBy.map(String)])];
+      for (const userId of recipients) await createNotification({ userId, type: 'project_completed', title: 'Project completed', message: project.title, relatedProjectId: project._id, relatedUserId: ngoId }, { session, key: 'completed:' + project._id });
+    }
     return Project.findById(project._id).session(session);
   }
-  return recalculateProjectFunding(project._id, session);
+  return recalculateProjectFunding(project._id, session, true);
 });
 export const updateProjectStatus = (ngoId, projectId, status) => updateProject(ngoId, projectId, {
   status
@@ -283,6 +293,7 @@ export const reviewApplication = (ngoId, applicationId, status, expectedProjectI
   if (String(project.ngoId) !== String(ngoId) || expectedProjectId && String(project._id) !== expectedProjectId) fail('You do not own this application.', 403);
   if (application.status !== 'pending' && application.status !== status) fail('This application has already been reviewed.', 409);
   if (project.status === 'completed' && application.status !== status) fail('This project is completed.', 409);
+  const changed = application.status !== status;
   const alreadyAccepted = application.status === 'accepted';
   await Project.updateOne({ _id: project._id }, { $inc: { __v: 1 } }, { session });
   application.status = status;
@@ -290,6 +301,7 @@ export const reviewApplication = (ngoId, applicationId, status, expectedProjectI
     session
   });
   if (status === 'accepted') await acceptIntoTeam(project, application, session, alreadyAccepted);
+  if (changed) await createNotification({ userId: application.userId, type: 'application_' + status, title: 'Application ' + status, message: project.title, relatedProjectId: project._id, relatedUserId: ngoId }, { session, key: 'review:' + application._id + ':' + status });
   return {
     application,
     project: await Project.findById(project._id).session(session)
@@ -316,7 +328,7 @@ export const updateProjectResources = (ngoId, projectId, data) => strictTransact
   await project.save({
     session
   });
-  return recalculateProjectFunding(project._id, session);
+  return recalculateProjectFunding(project._id, session, true);
 });
 export const uploadProjectPhotos = async (ngoId, projectId, category, urls) => {
   await owned(ngoId, projectId);
@@ -325,6 +337,7 @@ export const uploadProjectPhotos = async (ngoId, projectId, category, urls) => {
     _id: projectId,
     ngoId
   }, {
+    ...(category !== 'progress' ? { $set: { evidenceVerified: false } } : {}),
     $push: {
       [`photos.${category}`]: {
         $each: urls
@@ -336,6 +349,7 @@ export const uploadProjectPhotos = async (ngoId, projectId, category, urls) => {
   });
 };
 export const getDashboardSummary = async (ngoId, userCity = '') => {
+  await checkMilestones(ngoId);
   const profile = await NGOProfile.findOne({
     userId: ngoId
   }).lean();

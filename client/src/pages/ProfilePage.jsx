@@ -1,9 +1,11 @@
+import React, { useState, useEffect } from 'react';
+import ReportModal from '../components/ReportModal';
 import { useAuth } from '../context/AuthContext';
 import * as communityService from '../services/communityService';
 import SkillsChipInput from '../components/SkillsChipInput';
 
 const ProfilePage = () => {
-  const { setUser, setProfile } = useAuth();
+  const { user: currentUser, setUser, setProfile } = useAuth();
   const [form, setForm] = useState({
     name: '',
     profilePhotoUrl: '',
@@ -144,6 +146,7 @@ const ProfilePage = () => {
             {saving ? 'Saving...' : 'Save profile'}
           </button>
         </form>
+        {currentUser && <ReportModal targetType="user" targetId={currentUser._id} label="Report profile" />}
       </div>
     </div>
   );

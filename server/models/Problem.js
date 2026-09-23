@@ -32,6 +32,7 @@ const STATUS_ENUM = [
 
 const problemSchema = new mongoose.Schema(
   {
+    isFlagged: { type: Boolean, default: false },
     postedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
