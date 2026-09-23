@@ -1,68 +1,33 @@
 import mongoose from 'mongoose';
-
-/**
- * Contribution model — expanded in Prompt 2 to minimal working shape.
- *
- * Records an actual contribution (time, skills, money, materials) made
- * by a volunteer to a problem. Distinct from Application (which is the
- * intent to help; this is the recorded act of helping).
- *
- * NOTE on future expansions:
- *   - Prompt 6 (Contributions + Impact Tracking): adds hoursLogged,
- *     verificationStatus, verifiedBy (NGO), receipt documents for money,
- *     structured materials list, full aggregation pipeline for impact reports.
- *   - Prompt 7 (Verification + Trust): adds cryptographic receipt hashes
- *     for financial contributions.
- *
- * MONEY CONTRIBUTIONS: The `amount` field is a PLACEHOLDER only.
- * No real payment gateway is integrated. Prompt 6 will integrate
- * Razorpay (or equivalent) with proper escrow + receipt tracking.
- * This simulates the flow for now.
- */
-
-const contributionSchema = new mongoose.Schema(
-  {
-    userId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: [true, 'Contribution must reference a user']
-    },
-    problemId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Problem',
-      required: [true, 'Contribution must reference a problem']
-    },
-    // Re-uses the CONTRIBUTION_TYPE_ENUM from Application model
-    type: {
-      type: String,
-      required: [true, 'Contribution type is required'],
-      enum: {
-        values: ['time', 'skills', 'money', 'materials'],
-        message: '{VALUE} is not a valid contribution type'
-      }
-    },
-    note: {
-      type: String,
-      trim: true,
-      maxlength: [500, 'Note cannot exceed 500 characters'],
-      default: ''
-    },
-    // PLACEHOLDER for money type — real payment integration in Prompt 6
-    amount: {
-      type: Number,
-      default: 0,
-      min: [0, 'Amount cannot be negative']
-    }
-  },
-  {
-    timestamps: true
+import { validateContribution } from '../services/contributionValidation.js';
+const sub = fields => new mongoose.Schema(fields, { _id: false });
+const contributionSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', default: null },
+  // Retained for migration/audit; never count amount alongside moneyContributed.
+  problemId: { type: mongoose.Schema.Types.ObjectId, ref: 'Problem', default: null },
+  note: { type: String, default: '', maxlength: 500 }, amount: { type: Number, default: 0 },
+  type: { type: String, enum: ['time', 'skills', 'money', 'materials'], required: true },
+  timeContributed: { type: sub({ hours: Number, description: String }), default: undefined },
+  skillsContributed: { type: sub({ skills: [String], hoursEquivalent: Number, description: String }), default: undefined },
+  moneyContributed: { type: sub({ amount: Number }), default: undefined },
+  materialsContributed: { type: sub({ items: [sub({ item: String, quantity: Number })], estimatedValue: Number }), default: undefined },
+  status: { type: String, enum: ['pending', 'confirmed', 'rejected'], default: 'confirmed' },
+  schemaVersion: { type: Number, default: 2 }, legacyNeedsReview: { type: Boolean, default: false },
+  legacyReason: String, legacyCurrencyConfirmed: String,
+  reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, reviewedAt: Date,
+  idempotencyKey: String, requestFingerprint: { type: String, select: false }
+}, { timestamps: true });
+contributionSchema.pre('validate', function () {
+  if (this.legacyNeedsReview) {
+    if (this.status === 'confirmed') this.invalidate('status', 'Legacy data requires review before confirmation.');
+    return;
   }
-);
-
-// Index for user-centric impact queries
+  if (!this.projectId) this.invalidate('projectId', 'New contributions require a project.');
+  try { validateContribution(this.toObject()); } catch (error) { this.invalidate('type', error.message); }
+});
 contributionSchema.index({ userId: 1, type: 1 });
-// Index for problem-centric aggregation
 contributionSchema.index({ problemId: 1 });
-
-const Contribution = mongoose.model('Contribution', contributionSchema);
-export default Contribution;
+contributionSchema.index({ projectId: 1, status: 1 });
+contributionSchema.index({ userId: 1, idempotencyKey: 1 }, { unique: true, partialFilterExpression: { idempotencyKey: { $type: 'string' } } });
+export default mongoose.model('Contribution', contributionSchema);

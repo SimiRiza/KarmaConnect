@@ -1,5 +1,62 @@
 # KarmaConnect
 
+## Fictional presentation data
+
+This workspace's local database uses `127.0.0.1:27018`, replica set
+`karmaLocal`, with persistent files in `.local/mongodb` (excluded from Git).
+Restart the application after changing `server/.env`. MongoDB is currently
+started manually; after reboot, start it again from the repository root in
+PowerShell before starting the app:
+
+```powershell
+& "$env:USERPROFILE/.cache/mongodb-binaries/mongod-x64-win32-7.0.24.exe" --dbpath "$PWD/.local/mongodb" --port 27018 --bind_ip 127.0.0.1 --replSet karmaLocal --logpath "$PWD/.local/mongodb/mongod.log" --logappend
+```
+
+Keep that terminal running. The existing database and demo records survive
+restarts; re-seeding is unnecessary unless you want to reset the demo.
+
+From the repository root, after installing dependencies:
+
+```bash
+node server/scripts/seedDemoData.js
+```
+
+Configure `server/.env` with `USE_IN_MEMORY_DB=false` and `MONGODB_URI`
+pointing to the same persistent MongoDB replica set (or Atlas database) used
+by the application. Shell environment variables take precedence; root `.env`
+is a fallback. The script deliberately refuses ephemeral databases and requires
+transactions, so a failed run cannot leave a partially replaced demo.
+
+This creates 8 verified community accounts, 3 verified NGO accounts, 3 verified
+CSR accounts, 8 problems, 6 projects, teams, applications, contributions,
+simulated funding and 2 completed Impact Stories. All identities and outcomes
+are fictional. Login emails and the shared password **`Demo@1234`** are printed
+after a successful run. Emails follow `volunteer1`–`volunteer8`, `ngo1`–`ngo3`
+and `csr1`–`csr3` at `demo.karmaconnect.test`.
+
+Re-running replaces only documents with `isSeedData: true` across the eleven
+demo models. Existing untagged accounts and records are preserved; an email
+collision aborts the entire operation. Tags are stored directly in MongoDB
+within the transaction, without changing the existing strict schemas.
+Records subsequently created through the app are untagged and will remain
+after cleanup, even if they refer to demo users or projects.
+
+To remove tagged demo records without creating replacements:
+
+```bash
+node server/scripts/seedDemoData.js --clear
+```
+
+For a walkthrough, use `ngo2` for lake-cleanup applications and the completed
+water camp, `ngo3` for elderly-care tasks and the completed hall repair, and
+`ngo1` for the unfunded computer lab and partially funded digital classes.
+CSR accounts 1, 2 and 3 respectively demonstrate education, environmental/
+community projects and elderly care. NGO track records and CSR totals are
+derived from these projects; no unsupported historical totals are added.
+CSR budget strings and focus labels retain the requested presentation values;
+the current matching engine may not recognise every descriptive label or
+rupee-formatted budget. Placeholder photos require internet access.
+
 > **From local problems to real impact — together.**
 
 KarmaConnect is a community-impact platform that connects local community problems with certified NGOs, passionate volunteers, and CSR-funded companies. The core flow is:
@@ -161,7 +218,7 @@ This starts:
 - [x] **Prompt 3** — NGO Dashboard & Problem Adoption
 - [x] **Prompt 4** — CSR Manager Dashboard & Funding Allocation
 - [x] **Prompt 5** — Matching Engine & Team Formation
-- [ ] **Prompt 6** — Contributions, Budgets & Impact Tracking
+- [x] **Prompt 6** — Contributions, Budgets & Impact Tracking
 - [ ] **Prompt 7** — Verification System, Trust Scores & Notifications
 - [ ] **Prompt 8** — Final UI, Admin Console & Production Polish
 
@@ -193,7 +250,7 @@ source-project links instead of deleting or silently merging records.
 ### Verification commands
 
 From `server`, run `npm.cmd test` on Windows (or `npm test` elsewhere). The suite
-includes 64 checks across authentication, community, NGO, CSR, matching and teams.
+includes 78 checks across authentication, community, NGO, CSR, matching, teams and impact.
 From `client`, run `npm.cmd run build` for the production frontend build.
 
 From `server`, `node scripts/verifyNgoBrowser.mjs` exercises the complete NGO flow
@@ -280,3 +337,66 @@ removal and mobile layout. Screenshots are saved in artifacts/team-browser/. The
 script uses isolated test data and the same Windows Chrome setup as the prior suites.
 Run npm.cmd test and the existing verifyNgoBrowser.mjs / verifyCsrBrowser.mjs scripts
 for regressions. From client, run npm.cmd run build.
+
+
+## Prompt 6: Contributions, shared progress and Impact Stories
+
+Community members can record structured time, skills, simulated INR donations and
+materials at /projects/:id (or through an adopted Problem). Time/skills require current
+team membership. Material donations wait for the owning NGO's confirmation in the
+Resources tab. Pending/rejected records do not count toward confirmed totals. Forms
+retain an idempotency key on retries to prevent duplicate records.
+
+ProgressSummary uses GET /api/projects/:id/progress-summary in community, NGO and CSR
+project views. It shows the same milestone ratio, confirmed hours/materials and combined
+funding breakdown to every role. Volunteer Contributions and company Funding remain
+separate records; confirmed volunteer money plus non-withdrawn CSR allocations form
+Project.fundingReceived. Money is simulated, never a real payment. Material estimated
+value and manual inventory counts are not added to funding totals.
+
+NGO receipt-backed cumulative spending remains the source of Project.fundingSpent.
+Spending is attributed to CSR allocations oldest first, then to the volunteer pool;
+any excess is visibly unattributed. Both new volunteer donations and CSR allocations
+check the combined gap transactionally. The original CSR withdrawal rules still apply.
+
+Completion through any existing NGO route creates one immutable ImpactRecord with
+confirmed totals, Team member count, NGO/CSR credits, recorded outcomes and copied
+photos. Later project edits and pending confirmations update live figures, not that
+snapshot. /impact-stories and /impact-stories/:projectId present the stories to any
+logged-in role. Contributor lists remain restricted to the owner NGO and current team
+members; /my-impact shows only the current user's totals and dated contribution history.
+
+### Historical data and startup migration
+
+Server startup runs prepareImpact after team preparation. It preserves original
+Contribution.problemId/note/amount/timestamps, links through Problem.linkedProjectId,
+and marks unmeasured/unknown-currency legacy records for review rather than inventing
+hours, quantities or INR conversion. Unadopted records stay intact until adoption.
+NGOs can supply known structured details and explicitly attest INR for legacy money.
+Repeated migration is safe; conflicting index data is never deleted automatically.
+
+Old completed projects without ImpactRecords receive explicitly labelled reconstructed
+snapshots. Unknown original completion dates remain null; reconstructed membership and
+photos reflect the available backfill records. Existing snapshots never get overwritten.
+Old manual volunteerHours remain separate evidence. For projects with confirmed
+structured hours, NGO totals prefer contributionHours instead of adding overlapping
+manual and structured records. Impact snapshots always use Contribution hours only.
+
+Run node scripts/impactMigrationReport.mjs from server for a read-only report of
+unlinked/review-needed records and completed projects lacking snapshots. It uses the
+configured database; USE_IN_MEMORY_DB=true is temporary development storage, not a
+report of persistent production data. Existing replica-set requirements still apply.
+
+### Verification
+
+From server: npm.cmd test, node scripts/verifyImpactBrowser.mjs,
+node scripts/verifyNgoBrowser.mjs, node scripts/verifyCsrBrowser.mjs, and
+node scripts/verifyTeamBrowser.mjs. Run browser suites sequentially to avoid competing
+Vite dependency optimization/startup in the shared workspace. Browser fixtures use
+isolated databases and temporary Chrome profiles. The impact fixture uses an existing
+local uploads image as test evidence only; it does not modify that file or live records.
+Impact screenshots are saved in artifacts/impact-browser/.
+From client: npm.cmd run build.
+
+Notifications, new verification badges, exports and real payment processing remain
+outside this prompt. See gemini.md for aggregation and future notification boundaries.

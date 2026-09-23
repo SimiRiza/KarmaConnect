@@ -1,76 +1,19 @@
-import React, { useState } from 'react';
-import { X } from 'lucide-react';
-
-export const ContributeModal = ({ open, onClose, onSubmit, type = 'money' }) => {
-  const [form, setForm] = useState({ amount: '', note: '' });
-
-  if (!open) return null;
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    onSubmit({
-      type,
-      amount: type === 'money' ? Number(form.amount || 0) : 0,
-      note: form.note
-    });
-    setForm({ amount: '', note: '' });
+import React, { useEffect, useRef, useState } from 'react';
+import api from '../services/api';
+import ContributionFields, { initialContributionForm, contributionPayload } from './ContributionFields';
+import ContributionTypeIcon from './ContributionTypeIcon';
+export const ContributeModal = ({ open, projectId, onClose, onSuccess }) => {
+  const dialog = useRef(null), retry = useRef(null);
+  const [type, setType] = useState('money'), [form, setForm] = useState(initialContributionForm), [busy, setBusy] = useState(false), [error, setError] = useState('');
+  useEffect(() => { if (open && !dialog.current.open) dialog.current.showModal(); }, [open]);
+  const submit = async e => {
+    e.preventDefault(); if (busy) return; setBusy(true); setError('');
+    const payload = contributionPayload(type, form), signature = JSON.stringify(payload);
+    if (retry.current?.signature !== signature) retry.current = { signature, key: crypto.randomUUID() };
+    try { const r = await api.post('/projects/' + projectId + '/contributions', payload, { headers: { 'Idempotency-Key': retry.current.key } }); onSuccess?.(r.data.contribution); onClose(); }
+    catch (e) { setError(e.response?.data?.message || 'Could not record contribution. Your details are kept for retry.'); }
+    finally { setBusy(false); }
   };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/50 p-4">
-      <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
-        <div className="mb-5 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-700">Contribute</p>
-            <h3 className="mt-1 text-2xl font-extrabold text-stone-900">Support this problem</h3>
-          </div>
-          <button type="button" onClick={onClose} className="rounded-full border border-stone-200 p-2 text-stone-500 hover:text-stone-800">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {type === 'money' && (
-            <div>
-              <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700">Amount (₹ / $)</label>
-              <input
-                type="number"
-                min="0"
-                value={form.amount}
-                onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                placeholder="500"
-                className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-200"
-              />
-            </div>
-          )}
-
-          <div>
-            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700">Note</label>
-            <textarea
-              value={form.note}
-              onChange={(e) => setForm({ ...form, note: e.target.value })}
-              rows={4}
-              placeholder="Share a short note about your support."
-              className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-200"
-            />
-          </div>
-
-          <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
-            This is a placeholder contribution flow for now. Real payment processing will be added in a later prompt.
-          </div>
-
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="rounded-xl border border-stone-300 px-4 py-2.5 text-sm font-semibold text-stone-700 hover:bg-stone-50">
-              Cancel
-            </button>
-            <button type="submit" className="rounded-xl bg-accent-500 px-4 py-2.5 text-sm font-bold text-white hover:bg-accent-600">
-              Record contribution
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
+  return <dialog ref={dialog} onCancel={e => { e.preventDefault(); if (!busy) onClose(); }} className="w-[calc(100%_-_2rem)] max-w-xl rounded-3xl p-6 backdrop:bg-stone-900/50 max-h-[90vh] overflow-y-auto"><div className="flex justify-between gap-3 mb-5"><h2 className="text-2xl font-bold">Record a contribution</h2><button disabled={busy} type="button" aria-label="Close contribution form" onClick={onClose}>Close</button></div><form onSubmit={submit} className="space-y-4"><label className="block">Contribution type<select className="block w-full border rounded-xl p-3" value={type} onChange={e => setType(e.target.value)}>{['time', 'skills', 'money', 'materials'].map(t => <option key={t} value={t}>{t}</option>)}</select></label><p className="flex gap-2 text-brand-800"><ContributionTypeIcon type={type} />{type === 'materials' ? 'Materials wait for NGO confirmation before counting.' : type === 'money' ? 'Simulated INR donation. No real payment is processed.' : 'Current team members can log their completed work.'}</p><ContributionFields type={type} form={form} setForm={setForm} />{error && <p role="alert" className="text-red-700">{error}</p>}<button disabled={busy} className="bg-accent-500 text-white rounded-xl px-5 py-3">{busy ? 'Recording...' : 'Submit contribution'}</button></form></dialog>;
 };
-
 export default ContributeModal;

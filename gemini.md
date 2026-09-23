@@ -50,7 +50,7 @@ exactly where the build stands.)
 - [x] Prompt 3 — NGO Dashboard
 - [x] Prompt 4 — CSR Manager Dashboard
 - [x] Prompt 5 — Matching + Team Formation
-- [ ] Prompt 6 — Contributions + Impact Tracking
+- [x] Prompt 6 — Contributions + Impact Tracking
 - [ ] Prompt 7 — Verification + Trust + Notifications
 - [ ] Prompt 8 — Final UI + Admin + Polish
 
@@ -286,3 +286,103 @@ exactly where the build stands.)
   Desktop/mobile screenshots are in artifacts/team-browser/. Existing NGO/community
   and CSR browser suites also passed, including project management, allocations,
   withdrawal, spending attribution, reports and dashboard role guards.
+
+
+### Prompt 6 decisions and verification
+- Contribution now stores projectId and exactly one typed payload: timeContributed,
+  skillsContributed, moneyContributed or materialsContributed. Status is confirmed by
+  default in the model; API time/skills/money auto-confirm, materials start pending.
+  New time/skill logging requires current Team membership; any community user may
+  donate money/materials. Client owner/project/status overrides are rejected.
+- New submissions use Idempotency-Key (per-user partial unique index and canonical
+  payload fingerprint). Same-payload retries return the same record; changed requests
+  conflict. Money is simulated INR, validated to two decimals and summed in paise.
+  No payment gateway, escrow, receipts for settled payments or real transfers were added.
+- Migration preserves old problemId/note/amount and original timestamps. Unknown hours,
+  skills, material quantities and ambiguous INR/$ amounts are not inferred. Legacy rows
+  are pending/legacyNeedsReview and excluded from confirmed totals until NGO review.
+  Original amount/note remain after structured repair. Legacy money confirmation must
+  explicitly attest INR. Historical confirmed donations may exceed the current goal;
+  excess is shown and additional donations/allocations are rejected at the unified gap.
+- migrateContributionRecords is idempotent and links historical problem contributions
+  through linkedProjectId. Unadopted records remain intact and visible in personal history;
+  adoption invokes the same linkage helper. Old problem contribute routes adapt linked
+  Projects to the validated service; unadopted/new incomplete submissions get clear errors.
+  New contribution records always reference a Project. Startup prepareImpact installs
+  additive indexes, migrates records and recalculates/backfills per Project transaction.
+  scripts/impactMigrationReport.mjs reports unresolved data without editing records.
+- contributionAggregates.js is the common confirmed-only calculation layer, re-exported
+  through impactCalculations.js. Skill session hours count once; per-skill breakdown
+  divides a multi-skill session equally. Material names normalize case/whitespace;
+  quantities aggregate per item, material count means distinct item kinds, and estimated
+  value is separate from money raised. Unlinked/pending/rejected/review rows never count.
+- aggregateProjectFunding returns fromVolunteers/fromCSR/total. Project.fundingReceived
+  is their sum; fundedBy remains CSR IDs only. CSR profile/portfolio figures remain
+  company-specific allocations, not volunteer money. Both funding paths lock Project
+  and check the unified gap, preventing concurrent volunteer/CSR overfunding.
+- Spending remains the latest cumulative NGO resource snapshot, never the sum of them.
+  Existing CSR allocations absorb spending oldest first; the remaining expense is
+  attributed to the confirmed volunteer pool, capped at its total. Any excess remains
+  unattributed. This preserves the prior CSR attribution rule without assigning full
+  project spending to each donor. Withdrawal keeps existing CSR eligibility rules.
+- Resources uses the shared read-only funding breakdown plus a separate receipt-backed
+  expense form. Raised money cannot imply spending, so the expense API/history remains.
+  Donated material quantities are shown separately from manually tracked inventory;
+  neither is blindly added to the other. No separate expense ledger was introduced.
+- Project.progressPercentage is the rounded (two-decimal) completed-milestone ratio,
+  zero when none exist. Creation/edit/status paths maintain it; migration backfills it.
+  Completed status alone does not fabricate 100% progress. Shared progress reads use
+  a transaction for consistent funding/contribution totals during concurrent changes.
+- Existing Project.volunteerHours is preserved as legacy NGO-recorded evidence.
+  contributionHours contains confirmed time + skill hours; contributionTracking is set
+  once structured hours are confirmed. NGO stats prefer structured hours on those projects
+  and retain old manual totals on untouched legacy projects, without adding overlapping
+  sources. Manual hours become read-only once structured tracking is active. ImpactRecord
+  hours always come strictly from confirmed Contributions, even for historical backfills.
+- Existing recalculateNgoStats lives in ngoStats.js and is re-exported by ngoService;
+  its logic was reused, not copied. Snapshot generation calls shared contribution/funding
+  reconciliation and existing NGO/CSR stat functions in the completion transaction.
+  Project locks and profile writes serialize competing completion/confirmation/funding
+  operations. All complete/status/general-update completion paths generate a snapshot.
+- ImpactRecord has one projectId under a partial unique index. It copies beneficiary,
+  confirmed hour/material/funding figures, original funding goal, spending, Team.members.length, organization
+  credits, photo arrays, completed milestones, title/category/location/description and
+  NGO-written outcomes. New completions set Project.completedAt. Existing placeholders
+  remain intact. Repeated/concurrent completion returns the same snapshot.
+- Historical completed Projects missing a snapshot get reconstructed=true, with actual
+  snapshot creation time and unknown original completedAt left null. Their membership
+  and photos reflect available backfill data, explicitly disclosed in the story. Never
+  represent a reconstruction as verified completion-time history or invent prior hours.
+- Snapshots never change on later Project/team/photo/outcome edits. Completed projects
+  reject new submissions, but pending pre-completion records can still be reviewed.
+  Late confirmations update current totals/profile statistics, not the completion story.
+  Pending-to-final decisions are idempotent; conflicting repeated decisions return409.
+- /api/projects/:id/progress-summary is the shared identity-free authenticated endpoint
+  for all roles; ProgressSummary uses it in community Project/adopted-Problem details,
+  NGO overview/resources and CSR evaluation/monitoring/reports. It shows required,
+  collected, spent, remaining, funding sources, gap/excess, hours/materials and milestones.
+- /api/projects/:id/contributions is private to owner NGO/current Team members; donors
+  outside the team can read only their own timeline via /api/users/me/impact. List pages
+  expose display names, not email/auth data. Confirmation is owner NGO only. Impact
+  Stories show NGO/CSR credits and aggregates, never individual donation identities.
+- /impact-stories and /impact-stories/:projectId are authenticated cross-role pages,
+  backed by paginated/filterable /api/impact-records and project impact-record endpoints.
+  Stories present problem, people, work, resources, result, evidence and impact. They
+  label simulated funds and historical reconstructions; before/after photos are copied
+  evidence, not generated claims. An unfinished project has no public impact record.
+- My Impact uses confirmed personal totals plus a paginated dated timeline including
+  pending/rejected/legacy entries. Community dashboard replaces application-derived
+  hours and fabricated XP/ranks with recorded contribution figures. Existing role
+  dashboards, matching, applications, team messaging and funding controls remain.
+- Prompt 7 can trigger notifications after contribution confirmation/completion commits.
+  Prompt 8 should reuse these shared aggregates, never add stable snapshots to live
+  contribution totals. New verification badges, report exports and payments stay deferred.
+- Verification: all 78 backend tests passed (64 existing plus 14 Prompt 6 checks).
+  The targeted impact suite also passed after the final required-funding snapshot field.
+  Production build passed. Impact browser checks passed for four typed forms, pending
+  material confirmation, expense receipt entry, outcomes/completion, personal timeline,
+  identical summaries across roles, unified CSR report, and desktop/mobile stories.
+  Existing NGO/community, CSR and two-session team browser suites passed. Screenshots
+  are in artifacts/impact-browser/, with earlier suites in their existing directories.
+  Browser review found and fixed a refresh ordering issue after material confirmation.
+  Tests use isolated replica sets and temporary browser sessions, not live records.

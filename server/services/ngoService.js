@@ -1,3 +1,6 @@
+import { milestoneProgress, generateImpactRecord, lockProject } from './impactCalculations.js';
+import { migrateContributionRecords } from './impactMigration.js';
+export { recalculateNgoStats } from './ngoStats.js';
 import { acceptIntoTeam } from './teamService.js';
 import { recalculateProjectFunding } from './fundingService.js';
 import mongoose from 'mongoose';
@@ -27,7 +30,7 @@ const strings = (value, label) => {
   if (!Array.isArray(value) || value.length > 50 || value.some(v => typeof v !== 'string' || !v.trim() || v.length > 500)) fail(`Invalid ${label}.`);
   return [...new Set(value.map(v => v.trim()))];
 };
-const fields = ['title', 'problemStatement', 'description', 'category', 'location', 'beneficiaries', 'requiredSkills', 'volunteersNeeded', 'materialsNeeded', 'fundingRequired', 'timeline', 'milestones', 'volunteerHours'];
+const fields = ['title', 'problemStatement', 'description', 'category', 'location', 'beneficiaries', 'requiredSkills', 'volunteersNeeded', 'materialsNeeded', 'fundingRequired', 'timeline', 'milestones', 'volunteerHours', 'outcomesSummary'];
 const owned = async (ngoId, projectId, session = null) => {
   const project = await Project.findById(id(projectId)).session(session);
   if (!project) fail('Project not found.', 404);
@@ -44,6 +47,7 @@ const applyFields = (project, data) => {
   if (!data || typeof data !== 'object' || Array.isArray(data)) fail('Invalid project data.');
   for (const key of fields) {
     if (data[key] === undefined) continue;
+    if (key === 'volunteerHours' && project.contributionTracking) { if (data[key] !== project.volunteerHours) fail('Structured contribution hours are read-only.'); continue; }
     if (['fundingRequired', 'volunteersNeeded', 'volunteerHours'].includes(key)) number(data[key], key);
     if (key === 'volunteersNeeded' && !Number.isInteger(data[key])) fail('Volunteers needed must be a whole number.');
     if (key === 'requiredSkills') strings(data[key], key);
@@ -73,6 +77,7 @@ const applyFields = (project, data) => {
     if (key === 'milestones' && (!Array.isArray(data[key]) || data[key].length > 100)) fail('Invalid milestones.');
     project[key] = data[key];
   }
+  project.progressPercentage = milestoneProgress(project.milestones);
   if (project.timeline?.startDate && project.timeline?.expectedEndDate && project.timeline.startDate > project.timeline.expectedEndDate) fail('End date must not precede start date.');
 };
 export const getNgoProfile = async userId => {
@@ -153,10 +158,8 @@ export const adoptProblem = (ngoId, problemId, data = {}) => strictTransaction(a
   await problem.save({
     session
   });
-  return {
-    project,
-    problem
-  };
+  await migrateContributionRecords({ problemId: problem._id }, session);
+  return { project, problem };
 });
 export const createDirectProject = async (ngoId, data) => {
   await verified(ngoId);
@@ -214,41 +217,6 @@ export const getProjectById = async (ngoId, projectId) => {
   }]);
   return project;
 };
-export const recalculateNgoStats = async (ngoId, session = null) => {
-  const [stats] = await Project.aggregate([{
-    $match: {
-      ngoId: new mongoose.Types.ObjectId(String(ngoId)),
-      status: 'completed'
-    }
-  }, {
-    $group: {
-      _id: null,
-      previousProjectsCount: {
-        $sum: 1
-      },
-      totalBeneficiariesReached: {
-        $sum: '$beneficiaries.estimatedCount'
-      },
-      totalVolunteerHours: {
-        $sum: '$volunteerHours'
-      }
-    }
-  }]).session(session);
-  const totals = stats || {
-    previousProjectsCount: 0,
-    totalBeneficiariesReached: 0,
-    totalVolunteerHours: 0
-  };
-  delete totals._id;
-  await NGOProfile.updateOne({
-    userId: ngoId
-  }, {
-    $set: totals
-  }, {
-    session
-  });
-  return totals;
-};
 const transition = (project, status) => {
   const current = PROBLEM_STATUSES.indexOf(project.status),
     next = PROBLEM_STATUSES.indexOf(status);
@@ -257,10 +225,12 @@ const transition = (project, status) => {
   project.status = status;
 };
 export const updateProject = (ngoId, projectId, data) => strictTransaction(async session => {
-  const project = await owned(ngoId, projectId, session);
+  const project = await lockProject(projectId, session);
+  if (String(project.ngoId) !== String(ngoId)) fail('You do not own this project.', 403);
+  const wasCompleted = project.status === 'completed';
   applyFields(project, data);
   if (data.status !== undefined) transition(project, data.status);
-  if (project.status === 'completed') transition(project, 'completed');
+  if (project.status === 'completed') { transition(project, 'completed'); if (!wasCompleted) project.completedAt = new Date(); }
   await project.save({
     session
   });
@@ -274,18 +244,10 @@ export const updateProject = (ngoId, projectId, data) => strictTransaction(async
   }, {
     session
   });
-  // Serialize recalculation for simultaneous completions through this profile write.
   if (project.status === 'completed') {
-    await NGOProfile.updateOne({
-      userId: ngoId
-    }, {
-      $inc: {
-        __v: 1
-      }
-    }, {
-      session
-    });
-    await recalculateNgoStats(ngoId, session);
+    // Snapshot generation refreshes the existing NGO/CSR statistics once, in this transaction.
+    await generateImpactRecord(project._id, session, !project.completedAt);
+    return Project.findById(project._id).session(session);
   }
   return recalculateProjectFunding(project._id, session);
 });

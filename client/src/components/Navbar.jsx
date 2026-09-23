@@ -63,6 +63,7 @@ export const Navbar = () => {
             </Link>
           </div>
 
+          {isAuthenticated && <Link to="/impact-stories" className="text-sm font-semibold text-brand-800 px-2">Impact stories</Link>}
           {/* Desktop Auth Controls */}
           <div className="hidden md:flex items-center space-x-3">
             {isAuthenticated && user ? (

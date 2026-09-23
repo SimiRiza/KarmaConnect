@@ -1,3 +1,5 @@
+import ImpactStoriesPage from './pages/ImpactStoriesPage';
+import ImpactStoryPage from './pages/ImpactStoryPage';
 import TeamWorkspacePage from './pages/TeamWorkspacePage';
 import CommunityProjectPage from './pages/CommunityProjectPage';
 import CSRLayout from './pages/csr/CSRLayout';
@@ -48,6 +50,8 @@ export const App = () => {
         <Routes>
           <Route path="/teams/:id" element={<ProtectedRoute><TeamWorkspacePage /></ProtectedRoute>} />
           <Route path="/projects/:id" element={<RoleProtectedRoute allowedRoles={['community_user']}><CommunityProjectPage /></RoleProtectedRoute>} />
+          <Route path="/impact-stories" element={<ProtectedRoute><ImpactStoriesPage /></ProtectedRoute>} />
+          <Route path="/impact-stories/:id" element={<ProtectedRoute><ImpactStoryPage /></ProtectedRoute>} />
           {/* Public Routes */}
           <Route path="/" element={<LandingPage />} />
           <Route path="/signup" element={<SignupPage />} />

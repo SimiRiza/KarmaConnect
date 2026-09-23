@@ -187,15 +187,10 @@ export const CommunityDashboard = () => {
     }
   };
 
-  // Calculate karma points & stats
-  const totalHours = (applications.filter(a => a.status === 'accepted').length * 8) + 12;
+  // Display recorded contribution totals.
+  const totalHours = impactStats?.totalVolunteerHours || 0;
   const activeProjectsCount = applications.filter(a => a.status === 'accepted' || a.status === 'pending').length;
   const moneyContributed = impactStats?.totalMoneyContributed || 0;
-  const karmaPoints = 150 + (totalHours * 10) + (applications.length * 25) + Math.floor(moneyContributed / 100);
-  const karmaLevel = karmaPoints > 500 ? 'Gold Changemaker' : karmaPoints > 250 ? 'Silver Changemaker' : 'Bronze Volunteer';
-  const karmaLevelNumber = karmaPoints > 500 ? 3 : karmaPoints > 250 ? 2 : 1;
-  const karmaTarget = karmaLevelNumber === 1 ? 250 : karmaLevelNumber === 2 ? 500 : 1000;
-  const karmaProgress = Math.min(100, Math.round((karmaPoints / karmaTarget) * 100));
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
@@ -279,8 +274,8 @@ export const CommunityDashboard = () => {
             <Sparkles className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-stone-500">Karma Points</p>
-            <p className="text-2xl sm:text-3xl font-extrabold text-brand-700 mt-0.5">{karmaPoints}</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-stone-500">Confirmed contributions</p>
+            <p className="text-2xl sm:text-3xl font-extrabold text-brand-700 mt-0.5">{Object.values(impactStats?.totalContributionsByType || {}).reduce((a, b) => a + b, 0)}</p>
           </div>
         </div>
 
@@ -289,58 +284,15 @@ export const CommunityDashboard = () => {
             <ShieldCheck className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-stone-500">Badges Earned</p>
-            <p className="text-2xl sm:text-3xl font-extrabold text-stone-900 mt-0.5">3 <span className="text-sm font-normal text-stone-500">verified</span></p>
+            <p className="text-xs font-bold uppercase tracking-wider text-stone-500">Material item kinds</p>
+            <p className="text-2xl sm:text-3xl font-extrabold text-stone-900 mt-0.5">{impactStats?.materialsCount || 0}</p>
           </div>
         </div>
       </div>
 
       {/* 3. Karma Tracker & Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Karma Tracker Widget */}
-        <div className="lg:col-span-2 bg-white rounded-3xl p-6 sm:p-8 border border-stone-200 shadow-sm space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-100 pb-4">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-700">Karma Rank & Progress</p>
-              <h2 className="text-xl sm:text-2xl font-extrabold text-stone-900 mt-0.5">{karmaLevel}</h2>
-            </div>
-            <div className="text-left sm:text-right">
-              <span className="text-xs font-semibold text-stone-500">Next milestone: Level {karmaLevelNumber + 1}</span>
-              <p className="text-sm font-bold text-brand-700">{karmaPoints} / {karmaTarget} XP</p>
-            </div>
-          </div>
-
-          {/* Progress Bar */}
-          <div className="space-y-1.5">
-            <div className="w-full bg-stone-100 rounded-full h-3 overflow-hidden border border-stone-200/80">
-              <div
-                className="bg-gradient-to-r from-brand-500 to-teal-500 h-full rounded-full transition-all duration-500"
-                style={{ width: `${karmaProgress}%` }}
-              />
-            </div>
-            <div className="flex justify-between text-[11px] text-stone-500 font-medium">
-              <span>Current: Level {karmaLevelNumber}</span>
-              <span>{karmaTarget - karmaPoints > 0 ? `${karmaTarget - karmaPoints} XP needed to level up` : 'Milestone achieved!'}</span>
-            </div>
-          </div>
-
-          {/* Point Breakdown */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-            <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200/60">
-              <span className="text-xs text-stone-500 block font-medium">Volunteer Hours</span>
-              <p className="font-extrabold text-stone-800 text-sm mt-0.5">+{totalHours * 10} XP</p>
-            </div>
-            <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200/60">
-              <span className="text-xs text-stone-500 block font-medium">Problem Applications</span>
-              <p className="font-extrabold text-stone-800 text-sm mt-0.5">+{applications.length * 25} XP</p>
-            </div>
-            <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200/60">
-              <span className="text-xs text-stone-500 block font-medium">Community Impact Bonus</span>
-              <p className="font-extrabold text-stone-800 text-sm mt-0.5">+150 XP</p>
-            </div>
-          </div>
-        </div>
-
+        <section className="lg:col-span-2 bg-white rounded-3xl p-6 border space-y-4"><h2 className="text-2xl font-bold">Your recorded impact</h2><p>Confirmed time and skill contributions: <strong>{totalHours} hours</strong>.</p><p>Individual donations: <strong>INR {moneyContributed}</strong> (simulated).</p><p><strong>{impactStats?.completedProjectsCount || 0}</strong> completed projects helped through recorded contributions.</p><Link to="/my-impact" className="underline text-brand-800">See your contribution timeline</Link><p className="text-sm text-stone-500">Pending contributions count after confirmation. Applications alone are not hours worked.</p></section>
         {/* Quick Actions Card */}
         <div className="bg-gradient-to-br from-brand-50/60 via-white to-stone-50 rounded-3xl p-6 sm:p-8 border border-brand-200/80 shadow-sm flex flex-col justify-between space-y-4">
           <div>

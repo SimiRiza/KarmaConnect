@@ -1,3 +1,4 @@
+import { progressSummary } from './impactCalculations.js';
 import { csrRecommendations } from './recommendationService.js';
 import Project from '../models/Project.js';
 import NGOProfile from '../models/NGOProfile.js';
@@ -256,7 +257,7 @@ export async function projectDetail(projectId) {
     ...p,
     ngo,
     volunteerParticipation: count.teamMembers?.length || 0,
-    unattributedSpent: Math.max(0, paise(p.fundingSpent) - active.reduce((sum, f) => sum + paise(f.amountSpentSoFar), 0)) / 100
+    unattributedSpent: Math.max(0, paise(p.fundingSpent) - active.reduce((sum, f) => sum + paise(f.amountSpentSoFar), 0) - paise(p.volunteerFundingSpent || 0)) / 100
   };
 }
 export async function getFundings(userId, query = {}) {
@@ -321,6 +322,7 @@ export async function report(userId, projectId) {
   // Structured report now; downloadable PDF/export is Prompt 8 polish.
   return {
     ...data,
+    progressSummary: await progressSummary(projectId),
     generatedAt: new Date(),
     beneficiariesReached: data.project.status === 'completed' ? data.project.beneficiaries.estimatedCount : 0,
     estimatedBeneficiaries: data.project.beneficiaries.estimatedCount,

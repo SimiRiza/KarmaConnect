@@ -1,3 +1,5 @@
+import { contributeToLegacyProblem } from '../services/contributionService.js';
+import { endpoint } from '../controllers/teamController.js';
 import { Router } from 'express';
 import { upload } from '../middleware/upload.js';
 import { discoverProblems } from '../services/problemDiscovery.js';
@@ -172,34 +174,7 @@ router.get('/:id/applicants', authenticate, authorize('community_user'), async (
   }
 });
 
-router.post('/:id/contribute', authenticate, authorize('community_user'), async (req, res, next) => {
-  try {
-    const { type, note, amount } = req.body;
-    const validTypes = ['time', 'skills', 'money', 'materials'];
-    if (!validTypes.includes(type)) {
-      return res.status(400).json({ success: false, message: 'Contribution type is invalid.' });
-    }
-
-    const problem = await Problem.findById(req.params.id);
-    if (!problem) return res.status(404).json({ success: false, message: 'Problem not found.' });
-
-    const contribution = await Contribution.create({
-      userId: req.user._id,
-      problemId: problem._id,
-      type,
-      note: note ? String(note).trim().slice(0, 500) : '',
-      amount: type === 'money' ? Number(amount || 0) : 0
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: 'Contribution recorded successfully.',
-      contribution
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+router.post('/:id/contribute', authenticate, authorize('community_user'), endpoint(async r => ({ contribution: await contributeToLegacyProblem(r.user.id, r.params.id, r.body, r.get('Idempotency-Key')) })));
 
 router.post('/:id/save', authenticate, authorize('community_user'), async (req, res, next) => {
   try {

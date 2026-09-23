@@ -35,6 +35,7 @@ export default function ProjectForm({
     materialsNeeded: initial.materialsNeeded || [],
     fundingRequired: initial.fundingRequired || 0,
     volunteerHours: initial.volunteerHours || 0,
+    outcomesSummary: initial.outcomesSummary || '',
     timeline: {
       startDate: date(initial.timeline?.startDate),
       expectedEndDate: date(initial.timeline?.expectedEndDate)
@@ -77,7 +78,8 @@ export default function ProjectForm({
     <div className="grid sm:grid-cols-2 gap-4">{['city', 'area'].map(key => <Field key={key} label={key === 'city' ? 'City' : 'Area'}><input className={inputClass} required={key === 'city'} value={form.location[key]} onChange={e => nested('location', key, e.target.value)} /></Field>)}</div>
     <div className="grid sm:grid-cols-2 gap-4"><Field label="Estimated beneficiaries"><input className={inputClass} type="number" min="0" step="1" required value={form.beneficiaries.estimatedCount} onChange={e => nested('beneficiaries', 'estimatedCount', Number(e.target.value))} /></Field><Field label="Who benefits?"><input className={inputClass} value={form.beneficiaries.description} onChange={e => nested('beneficiaries', 'description', e.target.value)} /></Field></div>
     <SkillsChipInput label="Required skills" value={form.requiredSkills} onChange={v => set('requiredSkills', v)} />
-    <div className="grid sm:grid-cols-3 gap-4">{[['volunteersNeeded', 'Volunteers needed'], ['fundingRequired', 'Funding required (INR)'], ['volunteerHours', 'Recorded volunteer hours']].map(([key, label]) => <Field key={key} label={label}><input className={inputClass} type="number" min="0" step={key === 'volunteersNeeded' ? '1' : '0.01'} required value={form[key]} onChange={e => set(key, Number(e.target.value))} /></Field>)}</div>
+<Field label="Outcomes summary"><textarea className={inputClass} maxLength={4000} value={form.outcomesSummary} onChange={e => set('outcomesSummary', e.target.value)} /></Field>
+    <div className="grid sm:grid-cols-3 gap-4">{[['volunteersNeeded', 'Volunteers needed'], ['fundingRequired', 'Funding required (INR)'], ['volunteerHours', 'Recorded volunteer hours']].map(([key, label]) => <Field key={key} label={label}><input disabled={key === 'volunteerHours' && initial.contributionTracking} className={inputClass} type="number" min="0" step={key === 'volunteersNeeded' ? '1' : '0.01'} required value={form[key]} onChange={e => set(key, Number(e.target.value))} /></Field>)}</div>
     <p className="text-sm text-stone-500">Record actual hours contributed. These count toward your impact when the project is completed.</p>
     <fieldset className="space-y-2"><legend className="font-semibold">Materials needed</legend><RepeatableFieldList items={form.materialsNeeded} onChange={v => set('materialsNeeded', v)} addLabel="Add material" createItem={() => ({
         item: '',

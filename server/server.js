@@ -1,3 +1,7 @@
+import { prepareImpact } from './services/impactMigration.js';
+import { listImpactRecords } from './services/impactCalculations.js';
+import { authenticate } from './middleware/auth.js';
+import { endpoint } from './controllers/teamController.js';
 import teamRoutes from './routes/teamRoutes.js';
 import projectRoutes from './routes/projectRoutes.js';
 import { prepareTeams } from './services/teamService.js';
@@ -86,6 +90,7 @@ app.use('/api/ngo', ngoRoutes);
 app.use('/api/csr', csrRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/projects', projectRoutes);
+app.get('/api/impact-records', authenticate, endpoint(r => listImpactRecords(r.query))); 
 
 // 7. 404 Handler for undefined API routes
 app.use('/api/*', (req, res) => {
@@ -104,6 +109,7 @@ if (process.env.NODE_ENV !== 'test' && !process.env.NODE_TEST_CONTEXT) {
     await prepareNgoIndexes();
     await Funding.createIndexes();
     await prepareTeams();
+    await prepareImpact();
     app.listen(PORT, () => {
       console.log(`🚀 KarmaConnect Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
       console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);

@@ -1,22 +1,11 @@
+import { aggregateProjectFunding } from './contributionAggregates.js';
 import mongoose from 'mongoose';
 import Funding from '../models/Funding.js';
 import Project from '../models/Project.js';
 import CSRProfile from '../models/CSRProfile.js';
 import { strictTransaction } from '../utils/strictTransaction.js';
-export const fail = (message, statusCode = 400) => {
-  throw Object.assign(new Error(message), {
-    statusCode
-  });
-};
-export const validId = value => {
-  if (!mongoose.isValidObjectId(value)) fail('Invalid record ID.');
-  return value;
-};
-export const paise = value => Math.round(value * 100);
-export const money = (value, positive = false) => {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < (positive ? 0.01 : 0) || value > 100000000000 || Math.abs(value * 100 - paise(value)) > 0.0001) fail('Use an INR amount with at most two decimal places.');
-  return paise(value);
-};
+import { fail, validId, paise, money } from './resourceValidation.js';
+export { fail, validId, paise, money } from './resourceValidation.js';
 export async function portfolioSummary(userId, session = null) {
   const [result] = await Funding.aggregate([{
     $match: {
@@ -156,9 +145,9 @@ export async function recalculateProjectFunding(projectId, session) {
     allocationDate: 1,
     _id: 1
   }).session(session);
-  if (!records.length) return project; // Preserve Prompt 3's unfunded resource tracking.
+  const unified = await aggregateProjectFunding(projectId, session);
   const active = records.filter(f => f.status !== 'withdrawn');
-  const received = active.reduce((sum, f) => sum + paise(f.amountAllocated), 0);
+  const received = paise(unified.total);
   // These are cumulative snapshots, NOT individual expenses. Never sum snapshots.
   const latest = [...(project.resourceUpdates || [])].reverse().find(r => typeof r.fundingSpent === 'number');
   const totalSpent = paise(latest?.fundingSpent ?? project.fundingSpent ?? 0);
@@ -172,6 +161,8 @@ export async function recalculateProjectFunding(projectId, session) {
       session
     });
   }
+  project.volunteerFundingSpent = Math.min(remainingSpent, paise(unified.fromVolunteers)) / 100;
+  project.unattributedSpent = Math.max(0, remainingSpent - paise(unified.fromVolunteers)) / 100;
   project.fundingReceived = received / 100;
   project.fundingSpent = totalSpent / 100; // Includes explicitly displayed unattributed historical spending.
   project.fundedBy = [...new Set(active.map(f => String(f.csrUserId)))];
@@ -224,13 +215,7 @@ export async function allocateFunding(userId, projectId, data, key) {
       }).session(session);
       if (previous) return checkRetry(previous);
       const project = await lockProject(projectId, session);
-      const active = await Funding.find({
-        projectId,
-        status: {
-          $ne: 'withdrawn'
-        }
-      }).session(session);
-      const collected = active.reduce((n, f) => n + paise(f.amountAllocated), 0);
+      const collected = paise((await aggregateProjectFunding(projectId, session)).total);
       if (project.status === 'completed') fail('Completed projects cannot receive new allocations.', 409);
       if (amount > paise(project.fundingRequired) - collected) fail('Allocation exceeds the current funding gap.', 409);
       // Replace with real payment gateway integration (e.g. Razorpay) before production.

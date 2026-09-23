@@ -55,6 +55,13 @@ const milestoneSchema = new mongoose.Schema(
 
 const projectSchema = new mongoose.Schema(
   {
+    progressPercentage: { type: Number, default: 0, min: 0, max: 100 },
+    outcomesSummary: { type: String, default: '', maxlength: 4000 },
+    completedAt: { type: Date, default: null },
+    contributionTracking: { type: Boolean, default: false },
+    contributionHours: { type: Number, default: 0, min: 0 },
+    volunteerFundingSpent: { type: Number, default: 0, min: 0 },
+    unattributedSpent: { type: Number, default: 0, min: 0 },
     teamId: { type: mongoose.Schema.Types.ObjectId, ref: 'Team', default: null },
     skillRequests: [{ skillNeeded: { type: String, required: true, trim: true, maxlength: 100 }, hoursNeeded: { type: Number, required: true, min: 0.1 }, description: { type: String, required: true, trim: true, maxlength: 2000 }, status: { type: String, enum: ['open', 'filled'], default: 'open' }, createdAt: { type: Date, default: Date.now } }],
     fundedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],

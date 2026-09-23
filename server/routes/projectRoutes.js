@@ -1,3 +1,5 @@
+import * as impact from '../services/impactCalculations.js';
+import * as contributions from '../services/contributionService.js';
 import { Router } from 'express';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { endpoint } from '../controllers/teamController.js';
@@ -5,6 +7,11 @@ import { reviewApplication } from '../services/ngoService.js';
 import * as community from '../services/communityProjectService.js';
 const router = Router();
 router.use(authenticate);
+router.get('/:id/progress-summary', endpoint(r => impact.progressSummary(r.params.id)));
+router.get('/:id/impact-record', endpoint(async r => ({ impactRecord: await impact.getImpactRecord(r.params.id) })));
+router.post('/:id/contributions', authorize('community_user'), endpoint(async r => ({ contribution: await contributions.createContribution(r.user.id, r.params.id, r.body, r.get('Idempotency-Key')) })));
+router.get('/:id/contributions', endpoint(r => contributions.listContributions(r.user.id, r.params.id, r.query)));
+router.patch('/:id/contributions/:contributionId/confirm', authorize('ngo'), endpoint(async r => ({ contribution: await contributions.reviewContribution(r.user.id, r.params.id, r.params.contributionId, r.body) })));
 router.post('/:id/accept-applicant/:applicationId', authorize('ngo'), endpoint(r => reviewApplication(r.user.id, r.params.applicationId, 'accepted', r.params.id)));
 router.get('/:id', authorize('community_user'), endpoint(r => community.projectDetail(r.user.id, r.params.id)));
 router.post('/:id/apply', authorize('community_user'), endpoint(r => community.apply(r.user.id, r.params.id, r.body)));

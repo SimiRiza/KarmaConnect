@@ -1,84 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import * as communityService from '../services/communityService';
-
-const MyImpactPage = () => {
-  const [impact, setImpact] = useState({
-    problemsParticipatedIn: { count: 0, list: [] },
-    totalContributionsByType: {},
-    totalMoneyContributed: 0,
-    completedProjectsCount: 0,
-    completedProjects: []
-  });
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const response = await communityService.getMyImpact();
-        setImpact(response.data.impact || {});
-      } catch (error) {
-        console.error(error);
-      }
-    };
-    load();
-  }, []);
-
-  return (
-    <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
-      <div className="mb-6">
-        <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-700">My impact</p>
-        <h1 className="mt-2 text-3xl font-extrabold text-stone-900">Contribution dashboard</h1>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-4">
-        <div className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wider text-stone-500">Problems helped</p>
-          <p className="mt-3 text-3xl font-extrabold text-brand-700">{impact.problemsParticipatedIn?.count || 0}</p>
-        </div>
-        <div className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wider text-stone-500">Total money</p>
-          <p className="mt-3 text-3xl font-extrabold text-brand-700">₹{Number(impact.totalMoneyContributed || 0)}</p>
-        </div>
-        <div className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wider text-stone-500">Completed projects</p>
-          <p className="mt-3 text-3xl font-extrabold text-brand-700">{impact.completedProjectsCount || 0}</p>
-        </div>
-        <div className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wider text-stone-500">Contribution types</p>
-          <p className="mt-3 text-3xl font-extrabold text-brand-700">{Object.keys(impact.totalContributionsByType || {}).length}</p>
-        </div>
-      </div>
-
-      <div className="mt-8 grid gap-6 lg:grid-cols-2">
-        <div className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-bold text-stone-900">Contribution breakdown</h2>
-          <div className="mt-4 space-y-2">
-            {Object.entries(impact.totalContributionsByType || {}).length === 0 ? (
-              <p className="text-sm text-stone-600">No contributions recorded yet.</p>
-            ) : Object.entries(impact.totalContributionsByType).map(([type, count]) => (
-              <div key={type} className="flex items-center justify-between rounded-2xl bg-stone-50 p-3 text-sm text-stone-700">
-                <span className="font-medium capitalize">{type}</span>
-                <span className="font-bold">{count}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-bold text-stone-900">Completed projects</h2>
-          <div className="mt-4 space-y-3">
-            {(impact.completedProjects || []).length === 0 ? (
-              <p className="text-sm text-stone-600">No completed projects yet.</p>
-            ) : impact.completedProjects.map((project) => (
-              <div key={project._id} className="rounded-2xl border border-stone-200 p-3">
-                <p className="font-semibold text-stone-900">{project.title}</p>
-                <p className="text-xs text-stone-500">{project.category}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default MyImpactPage;
+import { Link } from 'react-router-dom';
+import api from '../services/api';
+import ImpactStatCallout from '../components/ImpactStatCallout';
+import ContributionTypeIcon from '../components/ContributionTypeIcon';
+import { formatMoney } from '../components/PortfolioSummaryCard';
+export default function MyImpactPage() {
+  const [impact, setImpact] = useState(null), [page, setPage] = useState(1), [error, setError] = useState('');
+  useEffect(() => { let active = true; api.get('/users/me/impact', { params: { page } }).then(r => { if (active) { setImpact(r.data.impact); setError(''); } }).catch(e => { if (active) setError(e.response?.data?.message || 'Could not load your impact.'); }); return () => { active = false; }; }, [page]);
+  return <div className="max-w-6xl mx-auto px-4 py-10 space-y-7"><h1 className="text-3xl font-bold">My impact</h1><p className="text-stone-600">Your confirmed contributions, with pending and historical records kept separately. Money is simulated INR.</p>{error && <p role="alert" className="text-red-700">{error}</p>}{!impact && !error && <p>Loading your impact...</p>}{impact && <><div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4"><ImpactStatCallout label="Confirmed volunteer hours" value={impact.totalVolunteerHours} /><ImpactStatCallout label="Simulated money contributed" value={formatMoney(impact.totalMoneyContributed)} /><ImpactStatCallout label="Completed projects helped" value={impact.completedProjectsCount} /><ImpactStatCallout label="Projects contributed to" value={impact.problemsParticipatedIn.count} /></div><div className="grid md:grid-cols-2 gap-5"><section className="bg-white border rounded-2xl p-5 space-y-3"><h2 className="text-xl font-bold">Skills contributed</h2><p className="text-sm text-stone-500">A session using several skills divides its hours equally between them.</p>{impact.skills.map(s => <p key={s.skill}>{s.skill}: {s.hours} hours</p>)}{!impact.skills.length && <p>No confirmed skills contributions yet.</p>}</section><section className="bg-white border rounded-2xl p-5 space-y-3"><h2 className="text-xl font-bold">Materials contributed</h2>{impact.materials.map(m => <p key={m.item}>{m.item}: {m.quantity}</p>)}{!impact.materials.length && <p>No confirmed materials yet.</p>}<p>Estimated value: {formatMoney(impact.materialEstimatedValue)} (not included in money raised).</p></section></div><section className="space-y-4"><h2 className="text-2xl font-bold">Contribution timeline</h2>{impact.timeline.map(c => <article key={c._id} className="border rounded-2xl bg-white p-5 space-y-2"><div className="flex flex-wrap gap-3 items-center"><ContributionTypeIcon type={c.type} /><strong className="capitalize">{c.type}</strong><span>{c.status || 'pending'}{c.legacyNeedsReview ? ' ? legacy review needed' : ''}</span><time className="text-sm text-stone-500">{new Date(c.createdAt).toLocaleString()}</time></div><p className="font-semibold">{c.projectId?.title || c.problemId?.title || 'Historical contribution'}</p>{c.timeContributed && <p>{c.timeContributed.hours} hours ? {c.timeContributed.description}</p>}{c.skillsContributed && <p>{c.skillsContributed.hoursEquivalent} hours ? {c.skillsContributed.skills.join(', ')} ? {c.skillsContributed.description}</p>}{c.moneyContributed && <p>{formatMoney(c.moneyContributed.amount)} (simulated)</p>}{c.materialsContributed && <p>{c.materialsContributed.items.map(m => m.item + ': ' + m.quantity).join(', ')}</p>}{c.legacyNeedsReview && <p className="text-amber-800">{c.legacyReason} Original note: {c.note || 'None'}. Original amount: {c.amount || 0}, currency unrecorded.</p>}{!c.projectId && <p>Waiting for the original problem to be adopted and linked to a project.</p>}{c.projectId?.status === 'completed' && <Link className="underline text-brand-800" to={'/impact-stories/' + c.projectId._id}>View impact story</Link>}</article>)}{!impact.timeline.length && <p>No contributions yet. Your recorded work will appear here.</p>}{impact.totalPages > 1 && <div className="flex gap-4"><button disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button><span>Page {page} of {impact.totalPages}</span><button disabled={page >= impact.totalPages} onClick={() => setPage(page + 1)}>Next</button></div>}</section></>}</div>;
+}

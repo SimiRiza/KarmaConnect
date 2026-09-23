@@ -1,20 +1,21 @@
+import ProgressSummary from '../components/ProgressSummary';
+import ContributionActions from '../components/ContributionActions';
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { MapPin, Heart, HandCoins, Bookmark, BookmarkCheck, LoaderCircle } from 'lucide-react';
 import * as communityService from '../services/communityService';
 import StatusBadge from '../components/StatusBadge';
 import ApplyModal from '../components/ApplyModal';
-import ContributeModal from '../components/ContributeModal';
 
 const pipeline = ['reported', 'team_forming', 'funding_needed', 'in_progress', 'completed'];
 
 const ProblemDetailPage = () => {
   const { id } = useParams();
+  const [refreshKey, setRefreshKey] = useState(0);
   const [problem, setProblem] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
   const [isApplyOpen, setApplyOpen] = useState(false);
-  const [isContributionOpen, setContributionOpen] = useState(false);
   const [applicationStatus, setApplicationStatus] = useState('');
   const [savedList, setSavedList] = useState([]);
 
@@ -51,16 +52,6 @@ const ProblemDetailPage = () => {
       setApplicationStatus('pending');
     } catch (error) {
       alert(error.response?.data?.message || 'Unable to submit application.');
-    }
-  };
-
-  const handleContribution = async (payload) => {
-    try {
-      await communityService.contributeToProblem(id, payload);
-      setContributionOpen(false);
-      alert('Contribution recorded successfully.');
-    } catch (error) {
-      alert(error.response?.data?.message || 'Unable to record contribution.');
     }
   };
 
@@ -169,14 +160,7 @@ const ProblemDetailPage = () => {
                 </button>
               )}
 
-              <button
-                type="button"
-                onClick={() => setContributionOpen(true)}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-3 text-sm font-bold text-white hover:bg-brand-700"
-              >
-                <HandCoins className="h-4 w-4" />
-                Contribute
-              </button>
+              {problem.linkedProjectId ? <><ProgressSummary projectId={problem.linkedProjectId} refreshKey={refreshKey} /><ContributionActions projectId={problem.linkedProjectId} completed={problem.status === 'completed'} onSuccess={() => setRefreshKey(k => k + 1)} /></> : <p>Contributions can be logged once an NGO adopts this problem.</p>}
 
               <div className="rounded-2xl border border-stone-200 bg-white p-4 text-sm text-stone-700 space-y-2">
                 <div className="flex justify-between gap-2"><span>Estimated resources</span><span>{problem.estimatedResourcesNeeded || 'Not specified'}</span></div>
@@ -187,7 +171,6 @@ const ProblemDetailPage = () => {
       </div>
 
       <ApplyModal open={isApplyOpen} onClose={() => setApplyOpen(false)} onSubmit={handleApply} />
-      <ContributeModal open={isContributionOpen} onClose={() => setContributionOpen(false)} onSubmit={handleContribution} />
     </div>
   );
 };

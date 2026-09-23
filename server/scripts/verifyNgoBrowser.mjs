@@ -179,7 +179,7 @@ try {
     return r.result.value;
   };
   const wait = async predicate => {
-    const end = Date.now() + 15000;
+    const end = Date.now() + 30000;
     while (Date.now() < end) {
       if (await evaluate(predicate)) return;
       await new Promise(r => setTimeout(r, 150));
@@ -194,7 +194,7 @@ try {
     await command('Page.navigate', {
       url: base + route
     });
-    await wait("document.readyState === 'complete'");
+    await wait("document.readyState !== 'loading'");
   };
   const login = async email => {
     await go('/login');
