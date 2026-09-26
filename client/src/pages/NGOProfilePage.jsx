@@ -1,17 +1,16 @@
+import RequestError from '../components/RequestError';
 import VerificationEvidenceUpload from '../components/VerificationEvidenceUpload';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useId } from 'react';
 import * as ngoSvc from '../services/ngoService';
 import SkillsChipInput from '../components/SkillsChipInput';
 import VerificationBadge from '../components/VerificationBadge';
 import RepeatableFieldList from '../components/RepeatableFieldList';
 import { Save, Loader2, Plus, Trash2, User } from 'lucide-react';
 
-const FIELD = ({ label, children }) => (
-  <div>
-    <label className="block text-xs font-bold text-stone-500 uppercase tracking-wider mb-1.5">{label}</label>
-    {children}
-  </div>
-);
+const FIELD = ({ label, children }) => {
+  const id = useId();
+  return <div><label htmlFor={id} className="block text-xs font-bold text-stone-500 uppercase tracking-wider mb-1.5">{label}</label>{React.Children.map(children, child => React.isValidElement(child) ? React.cloneElement(child, { id }) : child)}</div>;
+};
 
 const INPUT = (props) => (
   <input
@@ -203,7 +202,7 @@ const NGOProfilePage = () => {
         </div>
 
         {/* Alerts */}
-        {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl">{error}</div>}
+        {error && <RequestError message={error}/>}
         {success && <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm px-4 py-3 rounded-xl">{success}</div>}
 
         <button

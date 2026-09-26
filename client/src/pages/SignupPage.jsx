@@ -31,13 +31,7 @@ const CAUSE_AREAS = [
   'Community Arts & Culture'
 ];
 
-const BUDGET_RANGES = [
-  'Under $10,000 / year',
-  '$10,000 – $50,000 / year',
-  '$50,000 – $250,000 / year',
-  '$250,000 – $1,000,000 / year',
-  'Over $1,000,000 / year'
-];
+const BUDGET_RANGES = ['INR 0-10000', 'INR 10000-50000', 'INR 50000-250000', 'INR 250000-1000000', 'INR 1000000-100000000'];
 
 export const SignupPage = () => {
   const [searchParams] = useSearchParams();

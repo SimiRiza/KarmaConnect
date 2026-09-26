@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 
 const userSchema = new mongoose.Schema(
   {
+    isSuspended: { type: Boolean, default: false },
+    bootstrapAdmin: { type: Boolean, select: false },
     name: {
       type: String,
       required: [true, 'Name is required'],
@@ -109,6 +111,7 @@ const userSchema = new mongoose.Schema(
 // 2dsphere index for future geospatial and proximity queries
 userSchema.index({ 'location.coordinates': '2dsphere' });
 
+userSchema.index({ bootstrapAdmin: 1 }, { unique: true, partialFilterExpression: { bootstrapAdmin: true } });
 const User = mongoose.model('User', userSchema);
 
 export default User;

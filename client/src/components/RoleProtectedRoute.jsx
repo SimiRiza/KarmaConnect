@@ -38,7 +38,7 @@ export const RoleProtectedRoute = ({ allowedRoles = [], children }) => {
           <div className="w-14 h-14 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4">
             <ShieldAlert className="w-7 h-7" />
           </div>
-          <h2 className="text-xl font-bold text-stone-900 mb-2">Access Restricted</h2>
+          <h2 className="text-xl font-bold text-stone-900 mb-2">403 ? Access Restricted</h2>
           <p className="text-stone-600 text-sm mb-6">
             Your account ({user.role}) does not have permission to view this section.
             Only accounts with roles <strong>{allowedRoles.join(', ')}</strong> can access this page.

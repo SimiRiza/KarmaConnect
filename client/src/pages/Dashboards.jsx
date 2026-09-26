@@ -1,3 +1,5 @@
+import EmptyState from '../components/EmptyState';
+import RequestError from '../components/RequestError';
 import VolunteerMatchCard from '../components/VolunteerMatchCard';
 import SkillRequestCard from '../components/SkillRequestCard';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -99,6 +101,7 @@ export const CommunityDashboard = () => {
   const { user, profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [skillMatches, setSkillMatches] = useState([]);
+  const [reload, setReload] = useState(0);
   const [matchError, setMatchError] = useState('');
   const [recommendedProblems, setRecommendedProblems] = useState([]);
   const [localProblems, setLocalProblems] = useState([]);
@@ -114,6 +117,7 @@ export const CommunityDashboard = () => {
   useEffect(() => {
     const fetchDashboardData = async () => {
       setLoading(true);
+      setMatchError('');
       try {
         const [problemsRes, appRes, impactRes, savedRes, recommendationsRes, skillsRes] = await Promise.allSettled([
           communityService.getProblems({ limit: 12, sort: 'newest' }),
@@ -141,7 +145,7 @@ export const CommunityDashboard = () => {
 
         setRecommendedProblems(recommendationsRes.status === 'fulfilled' ? recommendationsRes.value.data.items : []);
         setSkillMatches(skillsRes.status === 'fulfilled' ? skillsRes.value.data.items : []);
-        setMatchError(recommendationsRes.status === 'rejected' || skillsRes.status === 'rejected' ? 'Some matches could not load. Refresh to try again.' : '');
+        setMatchError([problemsRes,appRes,impactRes,savedRes,recommendationsRes,skillsRes].some(r=>r.status==='rejected') ? 'Some dashboard information could not load.' : '');
       } catch (err) {
         console.error('Error fetching dashboard data:', err);
       } finally {
@@ -150,7 +154,7 @@ export const CommunityDashboard = () => {
     };
 
     fetchDashboardData();
-  }, [userCity, profile]);
+  }, [userCity, profile, reload]);
 
   const handleToggleSave = async (problemId) => {
     try {
@@ -183,7 +187,7 @@ export const CommunityDashboard = () => {
       const appRes = await communityService.getMyApplications();
       setApplications(appRes.data.applications || []);
     } catch (error) {
-      alert(error.response?.data?.message || 'Unable to submit application.');
+      throw error;
     }
   };
 
@@ -351,10 +355,10 @@ export const CommunityDashboard = () => {
         </div>
 
         {loading ? (
-          <div className="p-12 text-center text-stone-500 text-sm">Finding best volunteer matches for your profile...</div>
-        ) : recommendedProblems.length === 0 ? (
+          <div role="status" className="p-12 text-center text-stone-500 text-sm">Loading matches for your profile...</div>
+        ) : matchError ? null : recommendedProblems.length === 0 ? (
           <div className="bg-white rounded-3xl p-8 border border-stone-200 text-center space-y-3">
-            <p className="text-stone-600 text-sm">No specific recommendations found. Explore all local community needs!</p>
+            <EmptyState title="No recommendations yet" message="Explore community needs or update your profile."/>
             <Link to="/discover" className="inline-block px-4 py-2 bg-brand-600 text-white text-xs font-bold rounded-xl">
               Explore Discover Page
             </Link>
@@ -368,7 +372,7 @@ export const CommunityDashboard = () => {
         )}
       </div>
 
-      <section className="space-y-4"><h2 className="text-2xl font-bold">Skill Matches</h2>{matchError && <p role="alert" className="text-red-700">{matchError}</p>}<div className="grid md:grid-cols-2 gap-4">{skillMatches.map(r => <SkillRequestCard key={r._id} request={r} />)}</div>{!loading && !skillMatches.length && <p>No open requests match your skills yet.</p>}</section>
+      <section className="space-y-4"><h2 className="text-2xl font-bold">Skill Matches</h2>{matchError && <RequestError message={matchError} onRetry={()=>setReload(n=>n+1)}/>}<div className="grid md:grid-cols-2 gap-4">{skillMatches.map(r => <SkillRequestCard key={r._id} request={r} />)}</div>{!loading && !matchError && !skillMatches.length && <EmptyState title="No open requests match your skills yet." message="Update your skills or check back later."/>}</section>
       {/* 5. Local Problems Near You */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
@@ -386,10 +390,10 @@ export const CommunityDashboard = () => {
         </div>
 
         {loading ? (
-          <div className="p-12 text-center text-stone-500 text-sm">Locating neighborhood problems...</div>
-        ) : localProblems.length === 0 ? (
+          <div role="status" className="p-12 text-center text-stone-500 text-sm">Loading neighborhood problems...</div>
+        ) : matchError ? null : localProblems.length === 0 ? (
           <div className="bg-white rounded-3xl p-8 border border-stone-200 text-center space-y-3">
-            <p className="text-stone-600 text-sm">No reported needs in {userCity} yet. Be the first to post one!</p>
+            <EmptyState title="No reported needs nearby" message="Be the first to post a local need."/>
             <Link to="/post-problem" className="inline-block px-4 py-2 bg-accent-500 text-white text-xs font-bold rounded-xl">
               Report a Problem in {userCity}
             </Link>
@@ -425,9 +429,9 @@ export const CommunityDashboard = () => {
           </Link>
         </div>
 
-        {applications.length === 0 ? (
+        {loading ? <p role="status">Loading applications...</p> : matchError ? null : applications.length === 0 ? (
           <div className="py-8 text-center text-stone-500 text-sm">
-            <p>You haven&apos;t applied to any projects yet.</p>
+            <EmptyState title="No applications yet" message="Find an opportunity to help your community."/>
             <Link to="/discover" className="text-accent-600 hover:underline font-bold text-xs mt-1 inline-block">
               Find an opportunity to help &rarr;
             </Link>

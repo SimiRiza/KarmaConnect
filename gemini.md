@@ -52,7 +52,7 @@ exactly where the build stands.)
 - [x] Prompt 5 — Matching + Team Formation
 - [x] Prompt 6 — Contributions + Impact Tracking
 - [x] Prompt 7 — Verification + Trust + Notifications
-- [ ] Prompt 8 — Final UI + Admin + Polish
+- [x] Prompt 8 — Final UI + Admin + Polish
 
 ## Known decisions already made (don't re-litigate these without reason)
 - Signup uses the existing transaction helper, including its pre-existing
@@ -465,3 +465,63 @@ exactly where the build stands.)
   navigation, reporting, both organization uploads, admin API review, live badges
   and desktop/mobile layouts. Artifacts are in artifacts/trust-browser/.
   Tests use isolated databases/browser sessions rather than live demo records.
+
+## Prompt 8 - Admin panel and final polish (completed)
+
+- Added the admin-only nested control panel: overview/growth, organization
+  verification and current-status history, reported-content context/review,
+  paginated user management, category usage and large-project evidence review.
+- Added persistent-database first-admin bootstrap through
+  `node server/scripts/createAdmin.js`, using ADMIN_EMAIL/ADMIN_PASSWORD. A unique
+  internal bootstrap guard prevents duplicate first admins under concurrency.
+  Additional admins are created only through the authenticated admin API/UI.
+  Public signup still excludes admin. No live admin was created by this work.
+- User suspension blocks login, refresh and authenticated access and clears refresh
+  sessions. Reactivation permits a new login. Serialized admin changes prevent
+  self-suspension and concurrent loss of the last active administrator.
+- Overview aggregates active CSR allocations, confirmed structured volunteer money
+  and time/skill hours, completed projects and snapshot beneficiaries. No project
+  mirrors are added twice. Growth returns twelve zero-filled UTC periods.
+- Categories remain enums. Counts treat linked Problem/Project documents as
+  separate uses. Dynamic category creation is disabled with a migration explanation.
+- Shared loading/error/retry/empty presentation, accessible labels, native
+  application-dialog focus, mobile budget/user cards, role navigation and INR
+  signup copy are implemented within the existing approved palette.
+- Verification: 100 backend tests passed; five prior workflow browser suites and
+  three admin/polish/signup browser suites passed; 31 page-state/mobile cases and
+  17 empty-state cases passed; production build passed. Details and route inventory
+  are in docs/prompt8-polish-audit.md. Tests use temporary databases only.
+
+## Application Summary for developers
+
+All eight build prompts are complete. KarmaConnect connects community members,
+NGOs and CSR managers through Discover -> Match -> Contribute -> Track Impact;
+administrators provide platform oversight. Community users report/save needs,
+receive recommendations, apply, join teams, record contributions and view impact.
+NGOs adopt needs, manage projects/applicants, coordinate teams, record resources
+and evidence, and complete projects. CSR managers discover/evaluate projects,
+allocate simulated INR, monitor spending and read portfolio/project reports.
+
+The existing React/Vite/Tailwind frontend and Express/Mongoose backend are retained.
+Auth uses bcrypt, in-memory access tokens, httpOnly refresh cookies and backend
+role checks. Admin routes add suspension checks and private account-management
+operations. Matching uses recorded interests/skills; teams support roles, tasks,
+meetings and polled messages. Structured contributions and completion snapshots
+provide consistent impact totals without double counting. Private organization
+verification, report review, project trust badges and in-app notifications support
+oversight without exposing private evidence or review notes publicly.
+
+Run with persistent MongoDB replica-set support for transactional workflows.
+Demo seeding and admin bootstrap are explicit operator scripts; startup does not
+create administrators. Configure bootstrap credentials locally as described in
+README. Payments are simulated, notifications/messages poll, category creation is
+not dynamic, and verification history represents the latest stored decision.
+
+## Local persistent database startup fix - 24 September 2026
+
+`server/scripts/startLocalMongo.js` is invoked by the server's `predev` hook and
+available as `npm run db:start`. It starts the existing local karmaLocal replica
+set on 127.0.0.1:27018, preserves .local/mongodb data, waits for primary readiness,
+and reuses an already-running instance. Remote/production/test configurations are
+untouched. Explicit USE_IN_MEMORY_DB=false disables automatic ephemeral fallback.
+Validated repeat startup, primary readiness, saved records, API health and demo login.

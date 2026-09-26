@@ -72,10 +72,10 @@ export const Footer = () => {
           <div>
             <h4 className="text-white text-sm font-semibold tracking-wider uppercase mb-4">Our Commitment</h4>
             <p className="text-xs text-stone-400 leading-relaxed mb-3">
-              KarmaConnect is built on transparency: every problem posted, dollar allocated, and hour volunteered is tracked to measurable, on-ground impact.
+              KarmaConnect is built on transparency: every problem posted, rupee allocated, and hour volunteered is tracked to measurable, on-ground impact.
             </p>
             <p className="text-xs text-stone-500">
-              Prompt 1 of 8: Foundation & Authentication Layer.
+              Discover, match, contribute and track community impact.
             </p>
           </div>
         </div>

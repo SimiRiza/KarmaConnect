@@ -1,3 +1,5 @@
+import AsyncState from '../components/AsyncState';
+import EmptyState from '../components/EmptyState';
 import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import * as ngoSvc from '../services/ngoService';
@@ -69,19 +71,14 @@ const MyProjectsPage = () => {
         ))}
       </div>
 
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl">{error}</div>}
 
+      <AsyncState error={error} onRetry={fetchProjects}>
       {loading ? (
         <div className="flex items-center justify-center py-16 text-brand-600">
           <Loader2 className="w-7 h-7 animate-spin" />
         </div>
       ) : projects.length === 0 ? (
-        <div className="text-center py-16">
-          <AlertCircle className="w-12 h-12 text-stone-300 mx-auto mb-3" />
-          <p className="font-bold text-stone-600">No projects found.</p>
-          <p className="text-sm text-stone-400 mt-1">
-            {statusFilter ? 'Try a different status filter.' : 'Create your first project or adopt a community problem.'}
-          </p>
+        <div className="text-center py-16"><EmptyState title="No projects found." message={statusFilter ? 'Try a different status filter.' : 'Create a project or adopt a community problem.'} />
           <div className="flex flex-wrap justify-center gap-3 mt-4">
             <Link to="/ngo/projects/new" className="text-sm font-semibold text-brand-700 hover:underline">+ New Project</Link>
             <span className="text-stone-300">|</span>
@@ -98,6 +95,7 @@ const MyProjectsPage = () => {
           </div>
         </>
       )}
+      </AsyncState>
     </div>
   );
 };

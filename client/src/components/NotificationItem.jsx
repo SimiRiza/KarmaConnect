@@ -15,7 +15,8 @@ export default function NotificationItem({ item, onChange, onNavigate }) {
    const id=item.relatedProjectId;
    if(item.type==='new_team_message') { try { const r=await api.get(user.role==='ngo'?'/ngo/projects/'+id:'/projects/'+id); const p=r.data.project; if(p.teamId) to='/teams/'+(p.teamId._id||p.teamId); } catch {} }
    to ||= user.role==='ngo'?'/ngo/projects/'+id:user.role==='csr_manager'?'/csr/projects/'+id:user.role==='admin'?null:'/projects/'+id;
-  } else if(item.type==='verification_status_changed') to=user.role==='ngo'?'/ngo/profile':'/csr/profile';
+  } else if(item.type==='report_received'&&user.role==='admin') to='/admin/reports';
+  else if(item.type==='verification_status_changed') to=user.role==='ngo'?'/ngo/profile':'/csr/profile';
   if(to){onNavigate?.();navigate(to);}
  });
  return <li className={'p-4 border-b border-canvas-border '+(item.isRead?'bg-white':'bg-brand-50')}>

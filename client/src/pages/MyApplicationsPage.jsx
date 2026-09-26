@@ -1,3 +1,4 @@
+import AsyncState from '../components/AsyncState';
 import { Link } from 'react-router-dom';
 import React, { useEffect, useState } from 'react';
 import * as communityService from '../services/communityService';
@@ -6,17 +7,19 @@ import EmptyState from '../components/EmptyState';
 const MyApplicationsPage = () => {
   const [applications, setApplications] = useState([]);
 
-  useEffect(() => {
-    const load = async () => {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const load = async () => {
+    setLoading(true);
+    setError('');
       try {
         const response = await communityService.getMyApplications();
         setApplications(response.data.applications || []);
       } catch (error) {
-        setApplications([]);
-      }
+        setError('Could not load applications.');
+      } finally { setLoading(false); }
     };
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
@@ -25,6 +28,7 @@ const MyApplicationsPage = () => {
         <h1 className="mt-2 text-3xl font-extrabold text-stone-900">Your active opportunities</h1>
       </div>
 
+      <AsyncState loading={loading} error={error} onRetry={load}>
       {applications.length === 0 ? (
         <EmptyState title="No applications yet" message="Apply to a problem and your statuses will appear here." />
       ) : (
@@ -47,6 +51,7 @@ const MyApplicationsPage = () => {
           ))}
         </div>
       )}
+      </AsyncState>
     </div>
   );
 };

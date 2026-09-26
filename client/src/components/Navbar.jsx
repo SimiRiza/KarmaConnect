@@ -59,8 +59,8 @@ export const Navbar = () => {
             <Link to="/#how-it-works" className="text-sm font-medium text-stone-600 hover:text-stone-900 transition-colors">
               How It Works
             </Link>
-            <Link to={user?.role === "ngo" ? "/ngo/discover-problems" : user?.role === "csr_manager" ? "/csr/discover-projects" : "/discover"} className="text-sm font-medium text-stone-600 hover:text-stone-900 transition-colors">
-              Explore Projects
+            <Link to={user?.role === "admin" ? "/admin/dashboard" : user?.role === "ngo" ? "/ngo/discover-problems" : user?.role === "csr_manager" ? "/csr/discover-projects" : "/discover"} className="text-sm font-medium text-stone-600 hover:text-stone-900 transition-colors">
+              {user?.role === "admin" ? "Admin Panel" : "Explore Projects"}
             </Link>
           </div>
 
@@ -133,11 +133,11 @@ export const Navbar = () => {
             How It Works
           </Link>
           <Link
-            to={user?.role === "ngo" ? "/ngo/discover-problems" : user?.role === "csr_manager" ? "/csr/discover-projects" : "/discover"}
+            to={user?.role === "admin" ? "/admin/dashboard" : user?.role === "ngo" ? "/ngo/discover-problems" : user?.role === "csr_manager" ? "/csr/discover-projects" : "/discover"}
             onClick={() => setMobileMenuOpen(false)}
             className="block py-2 text-stone-700 font-medium"
           >
-            Explore Projects
+            {user?.role === "admin" ? "Admin Panel" : "Explore Projects"}
           </Link>
           <div className="pt-3 border-t border-stone-100">
             {isAuthenticated && user ? (

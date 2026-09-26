@@ -1,3 +1,4 @@
+import AsyncState from '../components/AsyncState';
 import React, { useEffect, useState } from 'react';
 import * as communityService from '../services/communityService';
 import ProblemCard from '../components/ProblemCard';
@@ -6,13 +7,15 @@ import EmptyState from '../components/EmptyState';
 const SavedPage = () => {
   const [problems, setProblems] = useState([]);
 
+  const [loading,setLoading]=useState(true),[error,setError]=useState('');
   const loadSaved = async () => {
+    setLoading(true);setError('');
     try {
       const response = await communityService.getSavedProblems();
       setProblems(response.data.savedProblems || []);
     } catch (error) {
-      setProblems([]);
-    }
+      setError('Could not load saved opportunities.');
+    } finally { setLoading(false); }
   };
 
   useEffect(() => {
@@ -24,7 +27,7 @@ const SavedPage = () => {
       await communityService.unsaveProblem(problemId);
       setProblems((current) => current.filter((problem) => problem._id !== problemId));
     } catch (error) {
-      console.error(error);
+      setError('Could not remove this saved opportunity. Please retry.');
     }
   };
 
@@ -35,6 +38,7 @@ const SavedPage = () => {
         <h1 className="mt-2 text-3xl font-extrabold text-stone-900">Your saved opportunities</h1>
       </div>
 
+      <AsyncState loading={loading} error={error} onRetry={loadSaved}>
       {problems.length === 0 ? (
         <EmptyState title="No saved projects" message="Save a problem from the Discover page to keep it here." />
       ) : (
@@ -44,6 +48,7 @@ const SavedPage = () => {
           ))}
         </div>
       )}
+      </AsyncState>
     </div>
   );
 };

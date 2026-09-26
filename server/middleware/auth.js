@@ -45,6 +45,7 @@ export const authenticate = async (req, res, next) => {
       });
     }
 
+    if (user.isSuspended) return res.status(403).json({ success: false, message: 'Your account is suspended.', code: 'ACCOUNT_SUSPENDED' });
     req.user = user;
     next();
   } catch (error) {

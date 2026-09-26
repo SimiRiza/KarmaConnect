@@ -1,3 +1,4 @@
+import AsyncState from '../components/AsyncState';
 import React, { useState, useEffect } from 'react';
 import ReportModal from '../components/ReportModal';
 import { useAuth } from '../context/AuthContext';
@@ -20,8 +21,9 @@ const ProfilePage = () => {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
 
-  useEffect(() => {
-    const loadProfile = async () => {
+  const [loading,setLoading]=useState(true),[error,setError]=useState('');
+  const loadProfile = async () => {
+      setLoading(true);setError('');
       try {
         const response = await communityService.getProfile();
         const profile = response.data.profile || {};
@@ -38,11 +40,10 @@ const ProfilePage = () => {
           bio: profile.bio || ''
         });
       } catch (error) {
-        console.error(error);
-      }
+        setError('Could not load your profile.');
+      } finally { setLoading(false); }
     };
-    loadProfile();
-  }, []);
+  useEffect(() => { loadProfile(); }, []);
 
   const updateField = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
@@ -73,6 +74,7 @@ const ProfilePage = () => {
     }
   };
 
+  if (loading || error) return <AsyncState loading={loading} error={error} onRetry={loadProfile}/>;
   return (
     <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
       <div className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
@@ -84,29 +86,29 @@ const ProfilePage = () => {
         <form onSubmit={handleSave} className="space-y-6">
           <div className="grid gap-5 md:grid-cols-2">
             <div>
-              <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700">Name</label>
-              <input value={form.name} onChange={(e) => updateField('name', e.target.value)} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
+              <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700" htmlFor="ProfilePage-field-1">Name</label>
+              <input id="ProfilePage-field-1" value={form.name} onChange={(e) => updateField('name', e.target.value)} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
             </div>
             <div>
-              <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700">Profile photo URL</label>
-              <input value={form.profilePhotoUrl} onChange={(e) => updateField('profilePhotoUrl', e.target.value)} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
+              <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700" htmlFor="ProfilePage-field-2">Profile photo URL</label>
+              <input id="ProfilePage-field-2" value={form.profilePhotoUrl} onChange={(e) => updateField('profilePhotoUrl', e.target.value)} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
             </div>
           </div>
 
           <div className="grid gap-5 md:grid-cols-2">
             <div>
-              <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700">City</label>
-              <input value={form.location.city || ''} onChange={(e) => setForm({ ...form, location: { ...form.location, city: e.target.value } })} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
+              <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700" htmlFor="ProfilePage-field-3">City</label>
+              <input id="ProfilePage-field-3" value={form.location.city || ''} onChange={(e) => setForm({ ...form, location: { ...form.location, city: e.target.value } })} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
             </div>
             <div>
-              <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700">State</label>
-              <input value={form.location.state || ''} onChange={(e) => setForm({ ...form, location: { ...form.location, state: e.target.value } })} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
+              <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700" htmlFor="ProfilePage-field-4">State</label>
+              <input id="ProfilePage-field-4" value={form.location.state || ''} onChange={(e) => setForm({ ...form, location: { ...form.location, state: e.target.value } })} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
             </div>
           </div>
 
           <div>
-            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700">Subtype</label>
-            <select value={form.subType} onChange={(e) => updateField('subType', e.target.value)} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm">
+            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700" htmlFor="ProfilePage-field-5">Subtype</label>
+            <select id="ProfilePage-field-5" value={form.subType} onChange={(e) => updateField('subType', e.target.value)} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm">
               <option value="student">Student</option>
               <option value="working_professional">Working professional</option>
               <option value="general_volunteer">General volunteer</option>
@@ -126,8 +128,8 @@ const ProfilePage = () => {
           </div>
 
           <div>
-            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700">Availability</label>
-            <select value={form.availability} onChange={(e) => updateField('availability', e.target.value)} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm">
+            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700" htmlFor="ProfilePage-field-6">Availability</label>
+            <select id="ProfilePage-field-6" value={form.availability} onChange={(e) => updateField('availability', e.target.value)} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm">
               <option value="weekdays">Weekdays</option>
               <option value="weekends">Weekends</option>
               <option value="flexible">Flexible</option>
@@ -136,8 +138,8 @@ const ProfilePage = () => {
           </div>
 
           <div>
-            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700">Bio</label>
-            <textarea rows={5} value={form.bio} onChange={(e) => updateField('bio', e.target.value)} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
+            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700" htmlFor="ProfilePage-field-7">Bio</label>
+            <textarea id="ProfilePage-field-7" rows={5} value={form.bio} onChange={(e) => updateField('bio', e.target.value)} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
           </div>
 
           {message && <div className="rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-800">{message}</div>}

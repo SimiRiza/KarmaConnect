@@ -468,3 +468,85 @@ team_invitation are reserved for future flows; no invitation workflow is invente
 Run backend checks with npm run test:server. The new isolated browser check is
 node scripts/verifyTrustBrowser.mjs from the server directory. It exercises
 real polling, reports, evidence uploads, admin API review, badges and mobile UI.
+
+## Administrator setup and operations
+
+Use the existing persistent MongoDB replica set and `USE_IN_MEMORY_DB=false`.
+Supply `ADMIN_EMAIL` and `ADMIN_PASSWORD` in your local server environment, then run
+from the repository root:
+
+```powershell
+node server/scripts/createAdmin.js
+```
+
+The password must contain at least 8 characters and no more than 72 UTF-8 bytes.
+The script hashes it, creates one verified administrator, and never prints the
+password. It does not promote or overwrite an existing account. A repeated run
+is a no-op when any administrator exists; concurrent first runs create only one.
+No live administrator is created by tests or by application startup.
+
+Sign in at `/login` and open `/admin/dashboard`. The admin shell includes platform
+statistics, organization verification/history, reported-content review, users,
+category usage and project evidence review. Additional administrators can be
+created through User management. Public signup continues to accept only the three
+participant roles. All `/api/admin/*` endpoints require an active administrator;
+all `/admin/*` frontend routes are guarded, including unknown child routes.
+
+Suspension blocks login, refresh and existing access tokens and revokes refresh
+sessions. Reactivation requires a fresh login. Administrators cannot suspend
+themselves or leave the platform without an active administrator. Existing data
+is retained.
+
+New endpoints (in addition to the Prompt 7 review APIs):
+
+| Method and path | Purpose |
+| --- | --- |
+| POST `/api/admin/create-admin` | Create an additional administrator with name, email and password |
+| GET `/api/admin/stats/overview` | Platform totals, role/status breakdowns and pending queues |
+| GET `/api/admin/stats/growth?interval=month` | Twelve UTC monthly periods; `week` uses Monday boundaries |
+| GET `/api/admin/users` | Paginated users; optional role and literal name/email search |
+| GET `/api/admin/users/:id` | Safe account and role-profile details |
+| PATCH `/api/admin/users/:id/suspend` | Suspend and revoke sessions |
+| PATCH `/api/admin/users/:id/reactivate` | Restore ability to sign in |
+| GET `/api/admin/categories` | Existing enum categories and document usage counts |
+| GET `/api/admin/verifications?status=pending` | Paginated pending, verified or rejected organization profiles |
+| GET `/api/admin/reports/:id` | Reporter and typed content preview, with deleted-target handling |
+| GET `/api/admin/projects/pending-verification` | Large-project evidence queue |
+
+Verification approve/reject actions require `verificationNotes`. History shows the
+current decision and most recent review, not a complete audit log. Evidence files
+remain private and use authenticated downloads. Categories remain schema enums;
+adding dynamic categories requires a future migration. The disabled Add Category
+control explains that limitation.
+
+Statistics exclude withdrawn CSR allocations and unconfirmed/legacy volunteer
+contributions. Combined funding is active CSR allocations plus confirmed volunteer
+money; hours sum confirmed time and skill sessions once. Beneficiaries come from
+structured completion snapshots. Category totals count Problem and Project
+documents separately, including both sides of an adopted problem. All financial
+values are simulated INR; there is no payment gateway.
+
+Admin verification commands, from `server`:
+
+```powershell
+node --test tests/adminPrompt8.test.js
+node scripts/verifyAdminBrowser.mjs
+node scripts/verifyPolishBrowser.mjs
+```
+
+These use isolated temporary databases and browser profiles. Browser scripts
+require the locally installed Chrome path used by the existing regression scripts.
+
+### Local MongoDB startup
+
+With the project's local URI on port 27018 and `USE_IN_MEMORY_DB=false`,
+`npm run dev` in `server` starts the persistent `karmaLocal` replica set before
+starting the API. Existing data stays in `.local/mongodb`. You can also start only
+MongoDB with `npm run db:start`. Repeated starts reuse the running instance.
+
+The helper uses the existing cached Windows MongoDB 7.0.24 binary, or `mongod`
+on PATH. Set `MONGOD_BINARY` to override the executable path. It applies only to
+the project's exact local development URI, never production, test or remote DBs.
+When `USE_IN_MEMORY_DB=false`, an unavailable persistent database now stops startup
+instead of silently switching to a new temporary database. MongoDB logs are in
+`.local/mongodb/mongod.log`.

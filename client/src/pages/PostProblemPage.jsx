@@ -81,21 +81,21 @@ const PostProblemPage = () => {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700">Title</label>
-            <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
+            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700" htmlFor="PostProblemPage-field-1">Title</label>
+            <input id="PostProblemPage-field-1" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
             {errors.title && <p className="mt-1 text-xs text-red-600">{errors.title}</p>}
           </div>
 
           <div>
-            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700">Description</label>
-            <textarea rows={5} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
+            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700" htmlFor="PostProblemPage-field-2">Description</label>
+            <textarea id="PostProblemPage-field-2" rows={5} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
             {errors.description && <p className="mt-1 text-xs text-red-600">{errors.description}</p>}
           </div>
 
           <div className="grid gap-5 md:grid-cols-2">
             <div>
-              <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700">Category</label>
-              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm">
+              <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700" htmlFor="PostProblemPage-field-3">Category</label>
+              <select id="PostProblemPage-field-3" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm">
                 {categories.map((category) => <option key={category} value={category}>{category}</option>)}
               </select>
             </div>
@@ -120,13 +120,13 @@ const PostProblemPage = () => {
 
           <div className="grid gap-5 md:grid-cols-2">
             <div>
-              <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700">City</label>
-              <input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
+              <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700" htmlFor="PostProblemPage-field-4">City</label>
+              <input id="PostProblemPage-field-4" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
               {errors.city && <p className="mt-1 text-xs text-red-600">{errors.city}</p>}
             </div>
             <div>
-              <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700">Area / Neighborhood</label>
-              <input value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
+              <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700" htmlFor="PostProblemPage-field-5">Area / Neighborhood</label>
+              <input id="PostProblemPage-field-5" value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
             </div>
           </div>
 
@@ -136,8 +136,8 @@ const PostProblemPage = () => {
           </div>
 
           <div>
-            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700">Estimated resources needed</label>
-            <textarea rows={3} value={form.estimatedResourcesNeeded} onChange={(e) => setForm({ ...form, estimatedResourcesNeeded: e.target.value })} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
+            <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-stone-700" htmlFor="PostProblemPage-field-6">Estimated resources needed</label>
+            <textarea id="PostProblemPage-field-6" rows={3} value={form.estimatedResourcesNeeded} onChange={(e) => setForm({ ...form, estimatedResourcesNeeded: e.target.value })} className="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm" />
           </div>
 
           {errors.submit && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errors.submit}</div>}

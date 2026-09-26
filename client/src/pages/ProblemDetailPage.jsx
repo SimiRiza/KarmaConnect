@@ -1,3 +1,4 @@
+import RequestError from '../components/RequestError';
 import ReportModal from '../components/ReportModal';
 import ProjectTrust from '../components/ProjectTrust';
 import ProgressSummary from '../components/ProgressSummary';
@@ -14,6 +15,7 @@ const pipeline = ['reported', 'team_forming', 'funding_needed', 'in_progress', '
 const ProblemDetailPage = () => {
   const { id } = useParams();
   const [refreshKey, setRefreshKey] = useState(0);
+  const [error,setError]=useState('');
   const [problem, setProblem] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
@@ -22,6 +24,7 @@ const ProblemDetailPage = () => {
   const [savedList, setSavedList] = useState([]);
 
   const loadProblem = async () => {
+    setLoading(true);setError('');
     try {
       const [problemRes, savedRes] = await Promise.all([
         communityService.getProblem(id),
@@ -36,7 +39,7 @@ const ProblemDetailPage = () => {
       const myApplication = (myApplicationsRes.data.applications || []).find((item) => item.problemId?._id === id || item.problemId === id);
       setApplicationStatus(myApplication?.status || '');
     } catch (error) {
-      console.error(error);
+      setError(error.response?.data?.message || 'Could not load this problem.');
     } finally {
       setLoading(false);
     }
@@ -53,7 +56,7 @@ const ProblemDetailPage = () => {
       setApplyOpen(false);
       setApplicationStatus('pending');
     } catch (error) {
-      alert(error.response?.data?.message || 'Unable to submit application.');
+      throw error;
     }
   };
 
@@ -66,7 +69,7 @@ const ProblemDetailPage = () => {
       }
       setSaved((current) => !current);
     } catch (error) {
-      console.error(error);
+      setError(error.response?.data?.message || 'Could not load this problem.');
     }
   };
 
@@ -81,6 +84,7 @@ const ProblemDetailPage = () => {
     );
   }
 
+  if (error && !problem) return <RequestError message={error} onRetry={loadProblem}/>;
   if (!problem) {
     return <div className="px-4 py-16 text-center text-stone-600">Problem not found.</div>;
   }
@@ -89,6 +93,7 @@ const ProblemDetailPage = () => {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+      {error && <RequestError message={error} onRetry={loadProblem}/>}
       <div className="overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-sm">
         <div className="grid gap-6 lg:grid-cols-[1.4fr_0.8fr]">
           <div className="p-4 sm:p-6">

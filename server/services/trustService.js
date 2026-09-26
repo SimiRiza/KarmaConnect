@@ -47,7 +47,7 @@ export async function pendingVerifications(query) {
 }
 export const reviewVerification = (adminId, type, id, data) => strictTransaction(async session => {
  if (!['verified','rejected'].includes(data.verificationStatus)) fail('Choose verified or rejected.');
- const notes = text(data.verificationNotes ?? '', 'verification notes', 4000, false);
+ const notes = text(data.verificationNotes ?? '', 'verification notes', 4000, true);
  const profile = await profileModel(type).findById(validId(id)).select('+verificationNotes +verificationEvidence').session(session);
  if (!profile) fail('Profile not found.', 404);
  const changed = profile.verificationStatus !== data.verificationStatus;

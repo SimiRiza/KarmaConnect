@@ -65,6 +65,7 @@ export const registerUser = async (signupData) => {
     companyWebsite
   } = signupData;
 
+  if (!['community_user', 'ngo', 'csr_manager'].includes(role)) throw Object.assign(new Error('Invalid signup role.'), { statusCode: 400 });
   // Check if email already registered
   const existingUser = await User.findOne({ email: email.toLowerCase() });
   if (existingUser) {
@@ -249,6 +250,7 @@ export const loginUser = async (email, password) => {
     throw error;
   }
 
+  if (user.isSuspended) throw Object.assign(new Error('Your account is suspended. Please contact an administrator.'), { statusCode: 403, code: 'ACCOUNT_SUSPENDED' });
   // Check email verification requirement
   const requireVerification = process.env.REQUIRE_EMAIL_VERIFICATION === 'true';
   if (requireVerification && !user.isEmailVerified) {
@@ -266,8 +268,8 @@ export const loginUser = async (email, password) => {
   const hashedRefreshToken = hashToken(refreshToken);
   const updatedTokens = [...(user.refreshTokens || []), hashedRefreshToken].slice(-10);
 
-  user.refreshTokens = updatedTokens;
-  await user.save();
+  const stored = await User.updateOne({ _id: user._id, isSuspended: { $ne: true } }, { $set: { refreshTokens: updatedTokens } });
+  if (!stored.matchedCount) throw Object.assign(new Error('Your account is suspended.'), { statusCode: 403 });
 
   const profile = await getProfileByRole(user._id, user.role);
 
@@ -305,6 +307,7 @@ export const refreshSession = async (rawRefreshToken) => {
     throw error;
   }
 
+  if (user.isSuspended) throw Object.assign(new Error('Your account is suspended.'), { statusCode: 403, code: 'ACCOUNT_SUSPENDED' });
   const hashedIncoming = hashToken(rawRefreshToken);
   if (!user.refreshTokens || !user.refreshTokens.includes(hashedIncoming)) {
     const error = new Error('Session has expired or was revoked. Please log in again.');

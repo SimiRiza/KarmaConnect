@@ -7,7 +7,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test --test-concurrency=1 tests/**/*.test.js"
+    "test": "node --test --test-concurrency=1 tests/**/*.test.js",
+    "predev": "node scripts/startLocalMongo.js",
+    "db:start": "node scripts/startLocalMongo.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

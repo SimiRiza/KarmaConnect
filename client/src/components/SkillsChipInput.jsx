@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useId } from 'react';
 
 export const SkillsChipInput = ({ label, value = [], onChange, placeholder = 'Add a skill' }) => {
+  const inputId = useId();
   const [input, setInput] = useState('');
 
   const addTag = () => {
@@ -17,7 +18,7 @@ export const SkillsChipInput = ({ label, value = [], onChange, placeholder = 'Ad
 
   return (
     <div className="space-y-2">
-      {label && <label className="block text-xs font-bold uppercase tracking-wider text-stone-700">{label}</label>}
+      {label && <label htmlFor={inputId} className="block text-xs font-bold uppercase tracking-wider text-stone-700">{label}</label>}
       <div className="flex flex-wrap gap-2 rounded-xl border border-stone-300 bg-stone-50 px-2 py-2">
         {value.map((item) => (
           <button
@@ -29,7 +30,7 @@ export const SkillsChipInput = ({ label, value = [], onChange, placeholder = 'Ad
             {item} ×
           </button>
         ))}
-        <input
+        <input id={inputId} aria-label={label || placeholder}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {

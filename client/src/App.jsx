@@ -1,3 +1,5 @@
+import AdminLayout from './pages/admin/AdminLayout';
+import { AdminDashboard as AdminHome, AdminVerifications, AdminReports, AdminUsers, AdminUserDetail, AdminCategories, AdminProjectVerification } from './pages/admin/AdminPages';
 import NotificationsPage from './pages/NotificationsPage';
 import ImpactStoriesPage from './pages/ImpactStoriesPage';
 import ImpactStoryPage from './pages/ImpactStoryPage';
@@ -36,8 +38,7 @@ import MyApplicationsPage from './pages/MyApplicationsPage';
 import MyImpactPage from './pages/MyImpactPage';
 import SavedPage from './pages/SavedPage';
 import {
-  CommunityDashboard,
-  AdminDashboard
+  CommunityDashboard
 } from './pages/Dashboards';
 import ProtectedRoute from './components/ProtectedRoute';
 import RoleProtectedRoute from './components/RoleProtectedRoute';
@@ -176,16 +177,17 @@ export const App = () => {
             </Route>
           </Route>
 
-          <Route
-            path="/admin/dashboard"
-            element={
-              <ProtectedRoute>
-                <RoleProtectedRoute allowedRoles={['admin']}>
-                  <AdminDashboard />
-                </RoleProtectedRoute>
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/admin" element={<RoleProtectedRoute allowedRoles={['admin']}><AdminLayout /></RoleProtectedRoute>}>
+            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route path="dashboard" element={<AdminHome />} />
+            <Route path="verifications" element={<AdminVerifications />} />
+            <Route path="reports" element={<AdminReports />} />
+            <Route path="users" element={<AdminUsers />} />
+            <Route path="users/:id" element={<AdminUserDetail />} />
+            <Route path="categories" element={<AdminCategories />} />
+            <Route path="project-verification" element={<AdminProjectVerification />} />
+            <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
+          </Route>
 
           <Route element={<RoleProtectedRoute allowedRoles={['ngo']} />}>
             <Route path="/ngo/profile" element={<NGOProfilePage />} />

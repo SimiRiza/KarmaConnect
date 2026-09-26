@@ -1,3 +1,4 @@
+import * as admin from '../services/adminService.js';
 import { Router } from 'express';
 import path from 'node:path';
 import { authenticate, authorize } from '../middleware/auth.js';
@@ -6,6 +7,17 @@ import { verificationUpload, cleanEvidenceFiles, evidenceDirectory } from '../mi
 import { validId, fail } from '../services/resourceValidation.js';
 import * as trust from '../services/trustService.js';
 export const adminRoutes = Router(); adminRoutes.use(authenticate, authorize('admin'));
+adminRoutes.post('/create-admin', endpoint(r=>admin.createAdmin(r.body)));
+adminRoutes.get('/stats/overview', endpoint(()=>admin.overview()));
+adminRoutes.get('/stats/growth', endpoint(r=>admin.growth(r.query)));
+adminRoutes.get('/categories', endpoint(()=>admin.categories()));
+adminRoutes.get('/users', endpoint(r=>admin.usersList(r.query)));
+adminRoutes.get('/users/:id', endpoint(r=>admin.userDetail(r.params.id)));
+adminRoutes.patch('/users/:id/suspend', endpoint(r=>admin.suspendUser(r.user.id,r.params.id,true)));
+adminRoutes.patch('/users/:id/reactivate', endpoint(r=>admin.suspendUser(r.user.id,r.params.id,false)));
+adminRoutes.get('/verifications', endpoint(r=>admin.verifications(r.query)));
+adminRoutes.get('/reports/:id', endpoint(r=>admin.reportDetail(r.params.id)));
+adminRoutes.get('/projects/pending-verification', endpoint(r=>admin.evidenceQueue(r.query)));
 adminRoutes.get('/verifications/pending', endpoint(r=>trust.pendingVerifications(r.query)));
 adminRoutes.patch('/verifications/:profileType/:profileId', endpoint(r=>trust.reviewVerification(r.user.id,r.params.profileType,r.params.profileId,r.body)));
 adminRoutes.patch('/projects/:id/verify-evidence', endpoint(r=>trust.verifyEvidence(r.params.id)));

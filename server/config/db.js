@@ -52,7 +52,7 @@ export const connectDB = async () => {
     console.log(`✅ Connected to MongoDB at host: ${conn.connection.host}`);
   } catch (error) {
     console.warn(`⚠️ Could not connect to primary MongoDB URI (${uri}): ${error.message}`);
-    if (process.env.NODE_ENV !== 'production' && !mongoMemoryServer) {
+    if (process.env.NODE_ENV !== 'production' && process.env.USE_IN_MEMORY_DB !== 'false' && !mongoMemoryServer) {
       console.log('🔄 Attempting fallback to in-memory MongoDB...');
       try {
         const { MongoMemoryServer } = await import('mongodb-memory-server');
@@ -65,6 +65,7 @@ export const connectDB = async () => {
         console.error('❌ In-memory MongoDB fallback also failed:', fallbackErr.message);
       }
     }
+    if (process.env.USE_IN_MEMORY_DB === 'false') console.error('Persistent database required. For the local replica set, run npm run db:start from server.');
     console.error(`❌ MongoDB connection error: ${error.message}`);
     process.exit(1);
   }
