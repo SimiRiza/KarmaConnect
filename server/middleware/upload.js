@@ -1,12 +1,8 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import multer from 'multer';
-const directory = path.resolve(process.cwd(), 'uploads');
-fs.mkdirSync(directory, {
-  recursive: true
-});
-// Local storage is intentionally swappable for S3/Cloudinary in a later prompt.
+import { uploadsDirectory as directory } from '../config/storage.js';
+// In production this directory must be backed by operator-managed persistent storage.
 export const upload = multer({
   storage: multer.diskStorage({
     destination: directory,

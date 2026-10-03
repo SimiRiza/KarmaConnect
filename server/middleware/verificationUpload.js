@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import multer from 'multer';
-export const evidenceDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.local/verification-evidence');
+import { evidenceDirectory } from '../config/storage.js';
+export { evidenceDirectory };
 const extensions = { 'application/pdf': 'pdf', 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
 const parser = multer({ storage: multer.memoryStorage(), limits: { files: 4, fileSize: 5 * 1024 * 1024, fields: 2 }, fileFilter: (_req,file,cb) => cb(extensions[file.mimetype] ? null : Object.assign(new Error('Choose PDF, JPEG, PNG or WebP documents.'), { statusCode: 400 }), true) }).array('documents',4);
 export const cleanEvidenceFiles = files => Promise.all((files || []).filter(f=>f.path).map(f=>fs.promises.unlink(f.path).catch(()=>{})));

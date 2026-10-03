@@ -1,4 +1,46 @@
-﻿# Implementation Plan — Prompt 8: Admin Panel and Final Application Polish
+﻿# Implementation Plan — Minimal production readiness (3 October 2026)
+
+Status: Complete. Inspected startup, authentication, email, storage/download paths, CORS, Vite routing and tests before implementation. Only the provider-independent changes below were made. No deployment.
+
+## Code changes
+
+- Load environment settings before resolving storage paths. Validate production configuration before connecting/listening: distinct non-placeholder JWT secrets, HTTPS client origin, persistent MongoDB URI with in-memory mode explicitly disabled, SMTP settings and absolute storage directories.
+- Preserve development JWT defaults; reject missing/fallback/example secrets in production at startup and token use.
+- Reject in-memory production database connections and check transaction-capable topology before startup migrations. Do not expose connection credentials in production failure logs.
+- Configure public uploads and private verification evidence directories without changing URLs, schemas or authorization. Require separate absolute paths in production and reject private storage under public storage; keep local defaults in development. Durability remains an operator responsibility.
+- Require SMTP in production, never log email action links there, and report production delivery errors safely. Retain development console behavior; add no email provider or resend/queue feature.
+- Restrict production CORS to CLIENT_URL. Allow optional explicit TRUST_PROXY addresses/subnets, defaulting to no trust. Never guess hop counts or enable blanket trust.
+- Add focused production-safety tests; preserve all existing tests and features.
+
+## Environment variables the operator must supply
+
+- NODE_ENV=production; CLIENT_URL (exact HTTPS origin); distinct random JWT_SECRET and JWT_REFRESH_SECRET (at least 32 characters).
+- MONGODB_URI (persistent replica set or compatible sharded deployment); USE_IN_MEMORY_DB=false.
+- SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM (authorized sender).
+- UPLOAD_DIR and VERIFICATION_EVIDENCE_DIR (absolute durable directories). Optional TRUST_PROXY (actual proxy addresses/subnets); PORT as required by the existing host.
+- Choose REQUIRE_EMAIL_VERIFICATION explicitly; preserve its existing semantics.
+
+## Deployment-specific configuration left to the operator
+
+- Keep existing infrastructure. Configure HTTPS; serve client/dist with index.html fallback for frontend routes only. Route /api and /uploads to Express before that fallback, preserving API/file 404s. Do not add frontend hosting or infrastructure files.
+- Keep same-origin routing for current relative URLs and strict refresh cookies. Cross-site hosting needs a separate reviewed authentication decision, not a guessed cookie relaxation.
+- Provision persistent database/storage, permissions, backups and any existing-file migration. Never publicly serve verification evidence. Application code cannot establish filesystem durability or cross-instance sharing.
+- Determine proxy trust from the real chain; ensure trusted proxies overwrite forwarded headers.
+- Verify SMTP authorization/delivery and deployed authentication/uploads; use clean production data and secure admin setup. Signup already commits accounts before email delivery; do not introduce destructive rollback or a new recovery workflow.
+- Leave CSP unenforced pending compatibility testing against the actual frontend host, external fonts/images and permitted user photo URLs.
+
+## Verification
+
+- Run every existing backend test plus safety regressions, and the production build.
+- Verify development signup/login/refresh/logout against an isolated temporary replica set without touching live data or sending real mail.
+- Verify production startup rejects unsafe/missing configuration before connecting/listening; missing SMTP/delivery failures, CORS, proxy defaults and private storage separation.
+- Review the diff for secrets, schema/frontend/infrastructure changes and unintended effects. Do not deploy.
+
+Verification completed: all 100 existing backend tests plus 8 new production-safety tests passed (108 total, zero failures). The production frontend build passed with the existing 522.59 kB bundle-size warning. New checks exercised actual failing production startup for each required setting, production CORS and custom storage via an isolated app process, safe SMTP failure/success stubs, rejected standalone/in-memory database configuration, and development signup/login/authenticated access/refresh/logout on an isolated replica set. No real emails were sent. No frontend, schema, dependency or infrastructure changes; no credentials added. The full test log is artifacts/production-readiness-full-tests.log. Actual hosting routing, durable mounts, SMTP delivery and deployed browser behavior remain operator checks in docs/production-readiness.md.
+
+---
+
+# Archived plan — Prompt 8: Admin Panel and Final Application Polish
 
 Status: Complete. Approved implementation and verification finished on 24 September 2026. See docs/prompt8-polish-audit.md for results.
 

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { validateDatabaseConfig } from './environment.js';
 
 let mongoMemoryServer = null;
 
@@ -8,6 +9,7 @@ let mongoMemoryServer = null;
  * In development, automatically falls back to in-memory MongoDB if configured or if local connection fails.
  */
 export const connectDB = async () => {
+  validateDatabaseConfig();
   if (mongoose.connection.readyState === 1) {
     return;
   }
@@ -49,8 +51,19 @@ export const connectDB = async () => {
     const conn = await mongoose.connect(uri, {
       serverSelectionTimeoutMS: 5000,
     });
+    if (process.env.NODE_ENV === 'production') {
+      const topology = await conn.connection.db.admin().command({ hello: 1 });
+      if (!topology.setName && topology.msg !== 'isdbgrid') {
+        await mongoose.disconnect();
+        throw new Error('A MongoDB replica set or sharded deployment is required.');
+      }
+    }
     console.log(`✅ Connected to MongoDB at host: ${conn.connection.host}`);
   } catch (error) {
+    if (process.env.NODE_ENV === 'production') {
+      // Driver errors/URIs can contain credentials. Do not include them in startup logs.
+      throw new Error('Production MongoDB connection failed. Check MONGODB_URI, credentials, network access and replica-set/sharded topology.');
+    }
     console.warn(`⚠️ Could not connect to primary MongoDB URI (${uri}): ${error.message}`);
     if (process.env.NODE_ENV !== 'production' && process.env.USE_IN_MEMORY_DB !== 'false' && !mongoMemoryServer) {
       console.log('🔄 Attempting fallback to in-memory MongoDB...');

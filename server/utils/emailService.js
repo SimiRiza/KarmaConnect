@@ -1,9 +1,11 @@
 import nodemailer from 'nodemailer';
+import { validateEmailConfig } from '../config/environment.js';
 
 /**
  * Configure Nodemailer transporter using environment variables.
  */
 const createTransporter = () => {
+  validateEmailConfig();
   const host = process.env.SMTP_HOST;
   const port = parseInt(process.env.SMTP_PORT || '587', 10);
   const user = process.env.SMTP_USER;
@@ -29,7 +31,7 @@ const sendMailSafe = async ({ to, subject, text, html, actionUrl, actionLabel })
   const from = process.env.EMAIL_FROM || 'KarmaConnect <noreply@karmaconnect.org>';
   const transporter = createTransporter();
 
-  if (!transporter || process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== 'production') {
     console.log('\n======================================================');
     console.log('📧 [MOCK EMAIL SERVICE — DEVELOPMENT]');
     console.log(`To:      ${to}`);
@@ -45,8 +47,12 @@ const sendMailSafe = async ({ to, subject, text, html, actionUrl, actionLabel })
     try {
       await transporter.sendMail({ from, to, subject, text, html });
     } catch (err) {
+      if (process.env.NODE_ENV === 'production') {
+        // SMTP errors may contain credentials or message content; do not expose them.
+        throw Object.assign(new Error('Email delivery failed. Please try again later or contact support.'), { statusCode: 503 });
+      }
       console.warn(`⚠️ Failed to send email via SMTP to ${to}: ${err.message}`);
-      // Do not rethrow: email failures should not block user workflows
+      // Preserve the existing development console fallback.
     }
   }
 };

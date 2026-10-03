@@ -1,12 +1,13 @@
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import { authSecret } from '../config/environment.js';
 
 /**
  * Generate a short-lived JWT Access Token (15 minutes).
  * Payload contains only essential identification: id, email, role.
  */
 export const generateAccessToken = (user) => {
-  const secret = process.env.JWT_SECRET || 'dev_jwt_access_secret_fallback_key';
+  const secret = authSecret('JWT_SECRET', 'dev_jwt_access_secret_fallback_key');
   const expiresIn = process.env.JWT_ACCESS_EXPIRES_IN || '15m';
 
   return jwt.sign(
@@ -24,7 +25,7 @@ export const generateAccessToken = (user) => {
  * Generate a longer-lived JWT Refresh Token (7 days).
  */
 export const generateRefreshToken = (user) => {
-  const secret = process.env.JWT_REFRESH_SECRET || 'dev_jwt_refresh_secret_fallback_key';
+  const secret = authSecret('JWT_REFRESH_SECRET', 'dev_jwt_refresh_secret_fallback_key');
   const expiresIn = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
 
   return jwt.sign(
@@ -47,7 +48,7 @@ export const hashToken = (token) => {
  * Verify an access token.
  */
 export const verifyAccessToken = (token) => {
-  const secret = process.env.JWT_SECRET || 'dev_jwt_access_secret_fallback_key';
+  const secret = authSecret('JWT_SECRET', 'dev_jwt_access_secret_fallback_key');
   return jwt.verify(token, secret);
 };
 
@@ -55,7 +56,7 @@ export const verifyAccessToken = (token) => {
  * Verify a refresh token.
  */
 export const verifyRefreshToken = (token) => {
-  const secret = process.env.JWT_REFRESH_SECRET || 'dev_jwt_refresh_secret_fallback_key';
+  const secret = authSecret('JWT_REFRESH_SECRET', 'dev_jwt_refresh_secret_fallback_key');
   return jwt.verify(token, secret);
 };
 

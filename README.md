@@ -1,5 +1,12 @@
 # KarmaConnect
 
+## Production setup
+
+See [production configuration and deployment responsibilities](docs/production-readiness.md)
+before deploying. Production requires validated secrets, SMTP, persistent MongoDB
+and explicit durable upload directories. Routing, HTTPS and storage mounts remain
+your existing host's configuration; the application does not deploy itself.
+
 ## Fictional presentation data
 
 This workspace's local database uses `127.0.0.1:27018`, replica set
@@ -155,11 +162,11 @@ Review the variables in `server/.env`:
 | `CLIENT_URL` | Frontend origin for CORS and email links | `http://localhost:5173` |
 | `MONGODB_URI` | MongoDB connection string | `mongodb://localhost:27017/karmaconnect` |
 | `USE_IN_MEMORY_DB` | Fallback to in-memory DB if local mongo not running | `true` |
-| `JWT_SECRET` | 32+ char secret for 15-min access tokens | (random secret) |
-| `JWT_REFRESH_SECRET` | 32+ char secret for 7-day refresh tokens | (random secret) |
+| `JWT_SECRET` | 32+ char random secret for 15-min access tokens | Blank uses a development-only fallback |
+| `JWT_REFRESH_SECRET` | Different 32+ char random secret for 7-day refresh tokens | Blank uses a development-only fallback |
 | `REQUIRE_EMAIL_VERIFICATION` | Require email verification before login | `false` (for dev) / `true` |
-| `SMTP_HOST` | SMTP server host (optional in dev) | `smtp.mailtrap.io` |
-| `EMAIL_FROM` | Outgoing sender display and address | `KarmaConnect <noreply@karmaconnect.org>` |
+| `SMTP_HOST` | SMTP server host (required in production) | Blank uses development console delivery |
+| `EMAIL_FROM` | Outgoing sender display and address (required in production) | Blank uses the development sender |
 
 ### 4. Run Both Backend and Frontend Concurrently
 From the root directory:
