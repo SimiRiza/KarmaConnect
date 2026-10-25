@@ -1,8 +1,8 @@
 # Production configuration
 
 These instructions do not select a hosting provider or deploy the application.
-Existing features, database schemas, relative API URLs and refresh-cookie policy
-are unchanged. Development defaults remain available outside production.
+Development defaults remain available outside production. The frontend uses
+relative API URLs and the production refresh cookie uses SameSite=Strict.
 
 ## Required server environment
 
@@ -97,8 +97,8 @@ validation does not establish actual delivery: verify sender authorization,
 SMTP connectivity and inbox delivery using your own accounts before launch.
 
 Account creation already commits before verification mail is sent. A delivery
-failure leaves that account intact; this patch adds no destructive rollback or
-new resend feature. Fix delivery before inviting users. If an account is stranded
+failure leaves that account intact; there is no automatic rollback or resend
+feature. Fix delivery before inviting users. If an account is stranded
 unverified, an operator must resolve it using the existing operational processes.
 Reset requests may be retried after delivery is restored. Development retains its
 existing console links and non-fatal SMTP behavior.
@@ -107,13 +107,3 @@ Before opening access, verify signup/verification, login, page reload/session
 restoration, logout, password reset, public-photo upload/retrieval, authorized
 private-document upload/download, role restrictions, deep-link refresh, and
 persistence after restart. Funding remains simulated; no payments are collected.
-
-## Local verification (3 October 2026)
-
-All 100 existing backend tests and 8 production-safety regression tests passed.
-The new tests include development authentication against an isolated replica set,
-real startup rejection of missing configuration, production CORS/custom storage,
-private-file protection and SMTP failure handling without real delivery. The
-production frontend build passed; its existing 522.59 kB bundle-size warning
-remains. These checks do not verify your eventual hosting routes, storage durability
-or real SMTP delivery. No deployment was performed.

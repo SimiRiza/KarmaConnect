@@ -44,10 +44,14 @@ export async function acceptIntoTeam(project, application, session, alreadyAccep
   await syncTeam(project._id, team, session);
   return team;
 }
-export async function prepareTeams() {
+export function pendingTeamBackfillQuery() {
+  return Project.find({ 'teamMembers.0': { $exists: true }, teamId: null }).select('_id');
+}
+export async function prepareTeams({ indexesOnly = false } = {}) {
   await Team.createIndexes();
+  if (indexesOnly) return; // Only selected by the validated standalone startup policy.
   // Resumable compatibility backfill: only projects with already-accepted volunteers.
-  for await (const p of Project.find({ 'teamMembers.0': { $exists: true }, teamId: null }).select('_id').cursor()) {
+  for await (const p of pendingTeamBackfillQuery().cursor()) {
     await strictTransaction(async session => {
       const project = await Project.findOneAndUpdate({ _id: p._id }, { $inc: { __v: 1 } }, { new: true, session });
       await ensureTeam(project, session);

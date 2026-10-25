@@ -1,4 +1,30 @@
-node_modules
+# Installed dependencies and generated output
+node_modules/
+dist/
+coverage/
+.nyc_output/
+.vite/
+artifacts/
+*.log
+
+# Local environment, credentials, runtime uploads and database files
 .env
-# Local persistent MongoDB data and logs
+.env.*
+!.env.example
 .local/
+uploads/
+*.key
+*.p12
+*.pfx
+.aws/
+
+# Local tool/editor/operating-system state
+.codex/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~

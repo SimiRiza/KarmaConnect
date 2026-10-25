@@ -62,24 +62,60 @@ const day = offset => new Date(Date.now() + offset * 86400000);
 // Save through Mongoose to retain validation/defaults/hooks, then tag through the
 // native collection: strict schemas intentionally have no isSeedData path.
 // Both writes share the transaction, so no untagged seed document can commit.
-async function insert(Model, data, session) {
+async function insertTransactional(Model, data, session) {
   const [doc] = await Model.create([data], { session });
   await Model.collection.updateOne({ _id: doc._id }, { $set: { isSeedData: true } }, { session });
   return doc;
 }
 
+function assertDemoEnvironment(env = process.env) {
+  if (env.NODE_ENV === 'production') throw new Error('Demo seeding is forbidden when NODE_ENV=production, including --clear.');
+  if (env.USE_IN_MEMORY_DB === 'true') throw new Error('Set USE_IN_MEMORY_DB=false and use the same persistent MONGODB_URI as the application.');
+}
+
+export function demoSeedMode({ hello, hosts, dbName, env = process.env }) {
+  assertDemoEnvironment(env);
+  if (!dbName || ['admin', 'config', 'local'].includes(dbName)) throw new Error('Refusing to seed a missing or MongoDB system database.');
+  if (hello.setName || hello.msg === 'isdbgrid') return 'transaction';
+  if (env.NODE_ENV !== 'development' || env.ALLOW_STANDALONE_DEMO_SEED !== 'true') {
+    throw new Error('Standalone demo seeding requires NODE_ENV=development and ALLOW_STANDALONE_DEMO_SEED=true.');
+  }
+  if (!hosts?.length || hosts.some(({ host }) => !['localhost', '127.0.0.1', '::1'].includes(host))) {
+    throw new Error('Standalone demo seeding is restricted to a local loopback MongoDB server.');
+  }
+  return 'standalone';
+}
+
 export async function seedDemoData({ clear = false, log = console.log } = {}) {
-  // A replica set is required: never fall back to partial/destructive writes.
+  assertDemoEnvironment();
   const hello = await mongoose.connection.db.admin().command({ hello: 1 });
-  if (!hello.setName && hello.msg !== 'isdbgrid') throw new Error('Demo seeding requires a MongoDB replica set (including Atlas) for atomic cleanup and insertion.');
+  const mode = demoSeedMode({ hello, hosts: mongoose.connection.getClient().options.hosts, dbName: mongoose.connection.name });
+  const standalone = mode === 'standalone';
+  if (standalone) log('WARNING: local standalone demo seeding is NOT atomic. Stop application writes and run only one seed command at a time. Previous demo data cannot be restored after a failure.');
   // Prepare collections/indexes before opening a transaction on an empty DB.
   for (const Model of demoModels) await Model.init();
   const passwordHash = clear ? null : await bcrypt.hash(PASSWORD, 12);
   const session = await mongoose.startSession();
+  const created = new Map(demoModels.map(Model => [Model, []]));
+  async function insert(Model, data, session) {
+    if (!standalone) return insertTransactional(Model, data, session);
+    const doc = new Model(data);
+    // Include the tag in the first write, without changing the application's schema.
+    doc.set('isSeedData', true, { strict: false });
+    created.get(Model).push(doc._id);
+    await doc.save({ session });
+    return doc;
+  }
   let summary;
   try {
-    await session.withTransaction(async () => {
+    const writeDemo = async () => {
       const accounts = [], walkthrough = [];
+      // Check all fixed emails before deleting any existing demo data.
+      if (!clear) {
+        const emails = [['volunteer', volunteers], ['ngo', ngos], ['csr', companies]].flatMap(([prefix, rows]) => rows.map((_, i) => `${prefix}${i + 1}@${domain}`));
+        const collision = await User.collection.findOne({ email: { $in: emails }, isSeedData: { $ne: true } }, { session });
+        if (collision) throw new Error(`Refusing to replace an existing non-demo account: ${collision.email}`);
+      }
       let removed = 0;
       for (const Model of [...demoModels].reverse()) {
         const result = await Model.collection.deleteMany({ isSeedData: true }, { session });
@@ -159,12 +195,35 @@ export async function seedDemoData({ clear = false, log = console.log } = {}) {
         await refreshContributionStats(project._id, session);
         if (completed) {
           const record = await generateImpactRecord(project._id, session);
+          // The helper creates this snapshot for a new project owned by this run.
+          // Track its ID before tagging so a tagging failure can still clean it up.
+          if (standalone) created.get(ImpactRecord).push(record._id);
           await ImpactRecord.collection.updateOne({ _id: record._id }, { $set: { isSeedData: true } }, { session });
         }
       }
       for (const ngo of ngoUsers) await recalculateNgoStats(ngo._id, session);
       summary = { removed, accounts, walkthrough };
-    });
+    };
+    // A plain session avoids the helpers' automatic transaction wrappers; it does
+    // NOT make standalone writes atomic. Replica-set behavior stays transactional.
+    if (standalone) await writeDemo();
+    else await session.withTransaction(writeDemo);
+  } catch (error) {
+    if (standalone) {
+      let cleanupFailed = false;
+      for (const Model of [...demoModels].reverse()) {
+        const ids = created.get(Model);
+        if (!ids.length) continue;
+        try {
+          // All IDs are allocated/returned by this run, never discovered from user data.
+          const filter = { _id: { $in: ids } };
+          if (Model !== ImpactRecord) filter.isSeedData = true;
+          await Model.collection.deleteMany(filter);
+        } catch { cleanupFailed = true; }
+      }
+      log(`Standalone seed failed. Best-effort cleanup of this run ${cleanupFailed ? 'was incomplete; restore connectivity and rerun --clear' : 'completed'}. Earlier demo deletions cannot be rolled back. After an abrupt interruption, inspect the database before retrying.`);
+    }
+    throw error;
   } finally { await session.endSession(); }
   if (clear) { log(`Cleared ${summary.removed} tagged demo documents. No new data created.`); return summary; }
   log(`Fictional demo ready. Replaced ${summary.removed} previously tagged documents. All monetary entries are simulated.`);
@@ -181,8 +240,9 @@ async function main() {
   if (args.some(arg => arg !== '--clear')) throw new Error('Usage: node server/scripts/seedDemoData.js [--clear]');
   const directory = path.dirname(fileURLToPath(import.meta.url));
   dotenv.config({ path: path.resolve(directory, '../.env') });
-  dotenv.config({ path: path.resolve(directory, '../../.env') });
-  if (process.env.USE_IN_MEMORY_DB === 'true') throw new Error('Set USE_IN_MEMORY_DB=false and configure MONGODB_URI for the same persistent replica-set database used by the app. A separate ephemeral seed database would disappear on exit.');
+  // Match npm start/dev --prefix server: server/.env, overridden by shell variables.
+  // Do not silently seed a different database through a root-only .env fallback.
+  assertDemoEnvironment();
   const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/karmaconnect';
   try {
     await mongoose.connect(uri, { serverSelectionTimeoutMS: 5000 });
@@ -193,7 +253,7 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
   main().catch(error => {
     // Do not print a connection string or driver error that may contain secrets.
     const connectionError = /Mongo.*(Selection|Network|Parse|Server)/.test(error.name) && error.code !== 11000;
-    console.error(`Demo seed failed; no partial seed transaction was committed. ${connectionError ? 'Check MongoDB connectivity, credentials and replica-set configuration.' : error.message}`);
+    console.error(`Demo seed failed. ${connectionError ? 'Check MongoDB connectivity and credentials.' : error.message}`);
     process.exitCode = 1;
   });
 }

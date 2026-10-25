@@ -1,5 +1,6 @@
 import { proxyTrust } from './config/environment.js';
 import { uploadsDirectory } from './config/storage.js';
+import { startupPolicy, validateStartupOptions } from './config/startupPolicy.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import { adminRoutes, trustRoutes } from './routes/trustRoutes.js';
 import { prepareTrust } from './services/trustService.js';
@@ -109,12 +110,19 @@ app.use(errorHandler);
 
 // 9. Start Server only when executed directly
 if (process.env.NODE_ENV !== 'test' && !process.env.NODE_TEST_CONTEXT) {
-  connectDB().then(async () => {
+  Promise.resolve().then(() => {
+    validateStartupOptions();
+    return connectDB();
+  }).then(async () => {
+    const policy = await startupPolicy();
     await prepareTrust();
     await prepareNgoIndexes();
     await Funding.createIndexes();
-    await prepareTeams();
-    await prepareImpact();
+    await prepareTeams(policy);
+    await prepareImpact(policy);
+    if (policy.mode === 'standalone-development') {
+      console.warn('Standalone development startup enabled. Transaction-dependent startup maintenance is skipped because no pending migration work was detected. Transaction-dependent runtime features still require a transaction-capable MongoDB.');
+    }
     app.listen(PORT, () => {
       console.log(`🚀 KarmaConnect Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
       console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);

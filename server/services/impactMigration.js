@@ -3,7 +3,7 @@ import ImpactRecord from '../models/ImpactRecord.js';
 import Project from '../models/Project.js';
 import Problem from '../models/Problem.js';
 import { strictTransaction } from '../utils/strictTransaction.js';
-import { lockProject, calculateProjectProgress, generateImpactRecord, refreshContributionStats } from './impactCalculations.js';
+import { lockProject, calculateProjectProgress, generateImpactRecord, refreshContributionStats, milestoneProgress } from './impactCalculations.js';
 
 export async function migrateContributionRecords(filter = {}, session = null) {
   // Raw lean documents distinguish missing stored version from Mongoose defaults.
@@ -21,8 +21,15 @@ export async function migrationReport() {
     awaitingReview: await Contribution.countDocuments({ legacyNeedsReview: true }),
     completedWithoutSnapshot: await Project.aggregate([{ $match: { status: 'completed' } }, { $lookup: { from: 'impactrecords', localField: '_id', foreignField: 'projectId', as: 'snapshots' } }, { $match: { snapshots: { $size: 0 } } }, { $count: 'count' }]).then(rows => rows[0]?.count || 0) };
 }
-export async function prepareImpact() {
+export async function hasPendingProgressReconciliation() {
+  for await (const project of Project.find().select('milestones progressPercentage').lean().cursor()) {
+    if (project.progressPercentage !== milestoneProgress(project.milestones)) return true;
+  }
+  return false;
+}
+export async function prepareImpact({ indexesOnly = false } = {}) {
   await Contribution.createIndexes(); await ImpactRecord.createIndexes();
+  if (indexesOnly) return; // Do not run either migration or reconciliation without transactions.
   // Per-record conversion is resumable, never deletes data, and leaves historical dates intact.
   await migrateContributionRecords();
   for await (const p of Project.find().select('_id').cursor()) {
